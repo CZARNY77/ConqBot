@@ -4,34 +4,37 @@ import json
 
 
 class Database():
-  def __init__(self) -> None:
+  def __init__(self, bot) -> None:
     self.mydb = self.connect_with_db()
     self.cursor = self.mydb.cursor()
+    self.bot = bot
     self.edited_field = {}
     self.editing_users = {}
     self.edited_guild = {}
-    #przenieś do innej funkcji
+    #przenieś do json
     self.conf_field = {
-      1:"Link do excela TW",
-      2:"Link do ogólnego Excela",
-      3:"ID podstawowych ról (podajemy po przecinku)",
-      4:"ID roli rekrutera",
-      5:"ID ról lineup'ów (podajemy po przecinku)",
-      6:"ID roli oficerów (od tej roli w góre)",
-      7:"ID głównego kanału",
-      8:"ID głównego kanału na logi",
-      9:"ID kanału na logi rekruterów",
-      10:"ID sojuszowego serwera",
-      11:"ID ról na sojuszowym (jako pierwszą role podaj swoją)",
+      1:("Link do excela TW", "TW_excel"),
+      2:("Link do ogólnego Excela", "General_excel"),
+      3:("ID podstawowych ról (podajemy po przecinku)", "basic_roles"),
+      4:("ID roli rekrutera", "recruiter_id"),
+      5:("ID ról lineup'ów (podajemy po przecinku)", "lineup_roles"),
+      6:("ID roli oficerów (od tej roli w góre)", "officer_id"),
+      7:("ID głównego kanału", "main_id"),
+      8:("ID głównego kanału na logi", "general_logs_id"),
+      9:("ID kanału na logi rekruterów", "recruiter_logs_id"),
+      10:("ID sojuszowego serwera", "alliance_server_id"),
+      11:("ID ról na sojuszowym (jako pierwszą role podaj swoją)", "roles"),
       }
 
   def connect_with_db(self):#łączy się z bazą danych
     try:
+      with open('Discord/Keys/id_list.json', 'r') as file:
+        id_list = json.load(file)
       mydb = mysql.connector.connect(
-        host="mysql.host2play.com",
-        user="u732_02scVzBLhf",
-        password="cWsmFuy=h=AmVW8lYSTcf6f.",
-        database="s732_Discord_Servers"
+        host=id_list["host"],
+        user=id_list["user"],
+        password=id_list["password"],
+        database=id_list["database"]
       )
       return mydb
     except Exception as e:
@@ -43,6 +46,15 @@ class Database():
     table_names = [table[0] for table in tables]  # Pobieram nazwy tabel
     return table_names
   
+  def get_columns(self, tables):
+    tables_and_columns = {}
+    for table_name in tables:
+      self.cursor.execute(f"SHOW COLUMNS FROM {table_name}")
+      columns = self.cursor.fetchall()
+      column_details  = [(column[0], column[1]) for column in columns]
+      tables_and_columns[table_name] = column_details 
+    return tables_and_columns
+
   def add_new_guild(self, id, nazwa): #dodanie nowego serwera do bazydanych
     sql = "INSERT INTO Discord_Servers (ID, name) VALUES (%s, %s)"
     val = (id, nazwa)
@@ -77,35 +89,22 @@ class Database():
     self.edited_guild[user.display_name] = id
 
     embed = discord.Embed(color=user.color, title="Co chcesz zmienić")
-    #sprawdzenie czy dane id istnieje
     data_to_display = {}
     #pobranie wartości z tabeli Excel_links
-    results = self.get_results("SELECT TW_excel, General_excel FROM Excel_Links WHERE discord_server_id = %s", (id, ))
-    for i in range(2):
-      if results and results[0][i]:
-        data_to_display[i+1] = "Podano"
-    #pobranie wartości z tabeli Roles
-    results = self.get_results("SELECT basic_roles, recruiter_id, lineup_roles, officer_id FROM Roles WHERE discord_server_id = %s", (id, ))
-    #print(results)
-    for i in range(4):
-      if results and results[0][i]:
-        data_to_display[i+3] = results[0][i]
-        print(results[0][i])
-    #pobranie wartości z tabeli channels
-    results = self.get_results("SELECT main_id, general_logs_id, recruiter_logs_id FROM Channels WHERE discord_server_id = %s", (id, ))
-    #print(results)
-    for i in range(3):
-      if results and results[0][i]:
-        data_to_display[i+7] = results[0][i]
-    #pobranie wartości z tabeli Alliance_Server
-    results = self.get_results("SELECT alliance_server_id, roles FROM Alliance_Server WHERE discord_server_id = %s", (id, ))
-    #print(results)
-    for i in range(2):
-      if results and results[0][i]:
-        data_to_display[i+10] = results[0][i]
+    tables_and_columns = self.get_columns(self.get_tables())
+    
+    for table, columns in tables_and_columns.items():
+      column_names = [column_name for column_name, column_type in columns]
+      if "discord_server_id" in column_names:
+        column_names.remove("discord_server_id")
+        results = self.get_results(f"SELECT {', '.join(column_names)} FROM {table} WHERE discord_server_id = %s", (id, ))
+        for i in range(len(column_names)):
+          if results and results[0][i]:
+            data_to_display[column_names[i]] = results[0][i]
+
     #tworzenie pól 
     for i in range(1, len(self.conf_field)+1):
-      embed.add_field(name=f"{i}. {self.conf_field[i]}", value=f"```python\n{data_to_display.get(i, 'Brak')}\n```", inline=False)
+      embed.add_field(name=f"{i}. {self.conf_field[i][0]}", value=f"```python\n{data_to_display.get(self.conf_field[i][1], 'Brak')}\n```", inline=False)
     await user.send(embed=embed)
 
   def send_data(self, sql, val):  #funckja od wysyłanie danych do bazy danych
@@ -128,42 +127,17 @@ class Database():
         return
       for i in range(1, len(self.conf_field)+1):
         if msg.content == str(i) and not player_name in self.edited_field:
-          await msg.channel.send(f"Podaj **{self.conf_field[i]}**, albo wpisz **cancel** jak chcesz wrócić")
-          self.edited_field[player_name] = i
+          await msg.channel.send(f"Podaj **{self.conf_field[i][0]}**, albo wpisz **cancel** jak chcesz wrócić")
+          self.edited_field[player_name] = self.conf_field[i][1]
           break
 
   def Insert_data(self, edited_field, edited_guild, data):
-    #spisanie wszytstkich tabel i kolumn do których mają zostać wpisane dane !!!do porpawy!!!
-    tables = ["Excel_Links", "Roles", "Channels", "Alliance_Server"]
-    columns = [("TW_excel", "General_excel"),
-               ("basic_roles", "recruiter_id", "lineup_roles"),
-               ("main_id", "general_logs_id", "recruiter_logs_id"),
-               ("alliance_server_id", "roles")]
-
-    if edited_field == 1:
-      self.send_data(f"INSERT INTO Excel_Links (discord_server_id, TW_excel) VALUES (%s, %s) ON DUPLICATE KEY UPDATE TW_excel = VALUES(TW_excel);""", (edited_guild, data))
-    elif edited_field == 2:
-      self.send_data(f"INSERT INTO Excel_Links (discord_server_id, General_excel) VALUES (%s, %s) ON DUPLICATE KEY UPDATE General_excel = VALUES(General_excel);", (edited_guild, data))
-    elif edited_field == 3:
-      data = json.dumps(data.split(","))
-      self.send_data(f"INSERT INTO Roles (discord_server_id, basic_roles) VALUES (%s, %s) ON DUPLICATE KEY UPDATE basic_roles = VALUES(basic_roles);", (edited_guild, data))
-    elif edited_field == 4:
-      self.send_data(f"INSERT INTO Roles (discord_server_id, recruiter_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE recruiter_id = VALUES(recruiter_id);", (edited_guild, data))
-    elif edited_field == 5:
-      data = json.dumps(data.split(","))
-      self.send_data(f"INSERT INTO Roles (discord_server_id, lineup_roles) VALUES (%s, %s) ON DUPLICATE KEY UPDATE lineup_roles = VALUES(lineup_roles);", (edited_guild, data))
-    elif edited_field == 6:
-      self.send_data(f"INSERT INTO Roles (discord_server_id, officer_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE officer_id = VALUES(officer_id);", (edited_guild, data))
-    #main_id 	general_logs_id 	recruiter_logs_id
-    elif edited_field == 7:
-      self.send_data(f"INSERT INTO Channels (discord_server_id, main_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE main_id = VALUES(main_id);", (edited_guild, data))
-    elif edited_field == 8:
-      self.send_data(f"INSERT INTO Channels (discord_server_id, general_logs_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE general_logs_id = VALUES(general_logs_id);", (edited_guild, data))
-    elif edited_field == 9:
-      self.send_data(f"INSERT INTO Channels (discord_server_id, recruiter_logs_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE recruiter_logs_id = VALUES(recruiter_logs_id);", (edited_guild, data))
-    #roles 	alliance_server_id 
-    elif edited_field == 10:
-      self.send_data(f"INSERT INTO Alliance_Server (discord_server_id, alliance_server_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE alliance_server_id = VALUES(alliance_server_id);", (edited_guild, data))
-    elif edited_field ==11:
-      data = json.dumps(data.split(","))
-      self.send_data(f"INSERT INTO Alliance_Server (discord_server_id, roles) VALUES (%s, %s) ON DUPLICATE KEY UPDATE roles = VALUES(roles);", (edited_guild, data))
+    #pobieram wszystkie tabele, a następnie ich informacje o kolumnach i za pomocą pętli sprawdzam, jeśli jest kolumna jest taka sama jak edited_field to wpisuje
+    tables_and_columns = self.get_columns(self.get_tables())
+    for table, columns in tables_and_columns.items():
+      for name, type in columns:
+        if name == edited_field:
+          if type == "varchar(255)": #gdy podajemy więcej niż jedną role konwertujemy na json
+            data = json.dumps(data.split(","))
+          self.send_data(f"INSERT INTO {table} (discord_server_id, {edited_field}) VALUES (%s, %s) ON DUPLICATE KEY UPDATE {edited_field} = VALUES({edited_field});""", (edited_guild, data))
+          break

@@ -15,6 +15,7 @@ from Discord.planTW import CreatePlanBtn
 from Discord.database_connect import Database
 import os
 from dotenv import load_dotenv
+import asyncio
 
 intents = discord.Intents.all()
 intents.message_content = True
@@ -24,10 +25,6 @@ intents.members = True
 permissions = discord.Permissions.all()
 permissions.read_message_history = True
 permissions.manage_messages = True
-
-
-        
-##############################################################################################
 
 class MyBot(commands.Bot):
     def __init__(self):
@@ -50,10 +47,11 @@ class MyBot(commands.Bot):
 
     async def on_ready(self):
         try:
-            self.db = Database()
+            self.db = Database(self)
             self.db.servers_verification(self.guilds)
             self.createGroupsBtn = CreateGroupsBtn(self)
             self.createPlanBtn = CreatePlanBtn(self)
+
             self.add_view(self.createGroupsBtn)
             self.add_view(self.createPlanBtn)
             print("Bot is Ready.")
@@ -64,8 +62,12 @@ class MyBot(commands.Bot):
         await self.process_commands(message)
         if message.author.id != 1002261855718342759:
             if isinstance(message.channel, discord.DMChannel):
+                #try:
                 await self.db.user_configuration(message)
-
+                #    await self.wait_for("message", timeout=10, check=True)
+                #except asyncio.TimeoutError:
+                #    await message.channel.send("Przekroczono czasowy limit.")
+    
     async def on_guild_join(self, guild):
         self.db.one_server_verification(guild)
 
