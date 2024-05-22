@@ -25,6 +25,7 @@ intents.members = True
 permissions = discord.Permissions.all()
 permissions.read_message_history = True
 permissions.manage_messages = True
+permissions.manage_roles = True
 
 class MyBot(commands.Bot):
     def __init__(self):
@@ -32,10 +33,22 @@ class MyBot(commands.Bot):
         self.createGroupsBtn = None
         self.createPlanBtn = None
         self.db = None
+        self.recruView = None
+        self.wait_msg = False
+        self.editing_user = {}
         
         @self.command()
-        async def test(ctx):
-            await self.db.bot_configuration(ctx.author, ctx.guild.id)
+        async def config(ctx):
+            try:
+                await self.db.bot_configuration(ctx.author, ctx.guild.id)
+                self.wait_msg = True
+                self.editing_user[ctx.author.display_name] = ctx.author
+                await self.wait_for("message", timeout=60, check=lambda m: m.author == ctx.author)
+            except asyncio.TimeoutError:
+                await ctx.author.send("Przekroczono czasowy limit!")
+                self.wait_msg = False
+                self.db.del_editing_user(self.editing_user[ctx.author.display_name])
+                del self.editing_user[ctx.author.display_name]
 
         @self.command()    
         async def createGroup(ctx):
@@ -44,6 +57,10 @@ class MyBot(commands.Bot):
         @self.command()
         async def createPlan(ctx):
             await ctx.send(view=self.createPlanBtn)
+        
+        @self.command(name="rekru")
+        async def rekrutacja(ctx):
+            await ctx.send("Rekrutacja!!", view=self.recruView)
 
     async def on_ready(self):
         try:
@@ -51,25 +68,36 @@ class MyBot(commands.Bot):
             self.db.servers_verification(self.guilds)
             self.createGroupsBtn = CreateGroupsBtn(self)
             self.createPlanBtn = CreatePlanBtn(self)
-
+            self.recruView = MyView()
             self.add_view(self.createGroupsBtn)
             self.add_view(self.createPlanBtn)
+            self.add_view(self.recruView)
+            self.loop_always.start()
             print("Bot is Ready.")
         except Exception as e:
             print(f"error {e}")
 
     async def on_message(self, message):
         await self.process_commands(message)
-        if message.author.id != 1002261855718342759:
+        if message.author.id != self.user.id and self.wait_msg:
             if isinstance(message.channel, discord.DMChannel):
-                #try:
-                await self.db.user_configuration(message)
-                #    await self.wait_for("message", timeout=10, check=True)
-                #except asyncio.TimeoutError:
-                #    await message.channel.send("Przekroczono czasowy limit.")
+                try: 
+                    await self.db.user_configuration(message)
+                    self.wait_msg = True
+                    await self.wait_for("message", timeout=60, check=lambda m: m.author == message.author and m.channel == message.channel)
+                except asyncio.TimeoutError:
+                    await message.channel.send("Przekroczono czasowy limit.")
+                    self.wait_msg = False
+                    self.db.del_editing_user(self.editing_user[message.author.display_name])
+                    del self.editing_user[message.author.display_name]
     
     async def on_guild_join(self, guild):
         self.db.one_server_verification(guild)
+
+    @tasks.loop(seconds=60)
+    async def loop_always(self):
+        self.db.keep_alive()
+
 
 bot = MyBot()
 load_dotenv()

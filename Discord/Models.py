@@ -26,23 +26,70 @@ class MyView(discord.ui.View):
 class MyRecruSelect(discord.ui.View):
     excel = Excel()
     select_options = [discord.SelectOption(label="Cala rekrutacja", value=3), 
-                      discord.SelectOption(label="Wysłał prośbe/Dodany do rodu bez dc (1 etap)", value=1),
+                      discord.SelectOption(label="Wbił na discorda (1 etap)", value=1),
                       discord.SelectOption(label="Przeprowadzona rozmowa rekrutacyjna (2 etap)", value=2),
-                      discord.SelectOption(label="Modyfikacja", value=4),
-                      discord.SelectOption(label="Powrót do gry", value=5)]
+                      discord.SelectOption(label="Modyfikacja", value=4)]
     @discord.ui.select(placeholder = "Sposób Rekcutacji", options=select_options)
     async def select_reset_TW(self, interaction: discord.Interaction, select_item: discord.ui.Select):
         try:
             choice = int(select_item.values[0])
             if choice == 1:
-                await interaction.response.send_modal(MyModelAddPlayer_1(interaction, choice))
+                await interaction.response.send_modal(Form1(interaction, choice))
             elif choice in [2,3,4]:
-                await interaction.response.send_modal(MyModelAddPlayer_2(interaction, choice))
-            elif choice == 5:
-                await interaction.response.send_modal(MyModelAddPlayer_3(interaction, choice))
-        except:
-            await interaction.response.send_message('Nie masz uprawnień!!', ephemeral=True)
+                await interaction.response.send_modal(Form2(interaction, choice))
+        except Exception as e:
+            await interaction.response.send_message(f'error: {e}', ephemeral=True)
 
+class FormAddPlayer(ui.Modal):
+    def __init__(self, title, interaction, choice):
+        super().__init__(title=title)
+        self.name = ui.TextInput(label='Nazwa (Pamiętaj najpier zmień nick!)', placeholder="Rien")
+        self.comment = ui.TextInput(label='Komentarz (opcjonalne)', style=discord.TextStyle.long, required=False)
+        self.add_item(self.name)
+        self.add_item(self.comment)
+        self.interaction = interaction
+        self.choice = choice
+        self.bot = interaction.client
+        self.recru_channel_log_id = self.bot.db.get_specific_value(interaction.guild_id, "recruiter_logs_id")
+
+    async def on_submit(self, interaction: discord.Interaction):
+        pass
+
+class Form1(FormAddPlayer):
+    def __init__(self, interaction, choice):
+        super().__init__(title='Formularz', interaction=interaction, choice=choice)
+        self.request = ui.TextInput(label='Czy wysłał zaproszenie do rodu?', placeholder="tak/nie", required=False)
+        self.add_item(self.request)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.send_message(f'Formularz został wysłany. Na {interaction.guild.get_channel(self.recru_channel_log_id).mention} zobacz podsumowanie.', ephemeral=True)
+        excel = Excel(self.interaction)
+        await excel.add_player_to_excel(self.name, self.choice, comment=self.comment, request=self.request)
+        del excel
+
+class Form2(FormAddPlayer):
+    def __init__(self, interaction, choice):
+        super().__init__(title='Formularz', interaction=interaction, choice=choice)
+        self.in_house = ui.TextInput(label='Czy w rodzie?', placeholder="1/2/nie", required=False)
+        self.recru_process = ui.TextInput(label='Czy przeszedł rekrutacje?', placeholder="tak/nie", required=False)
+        self.add_item(self.in_house)
+        self.add_item(self.recru_process)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.send_message(f'Formularz został wysłany. Na {interaction.guild.get_channel(self.recru_channel_log_id).mention} zobacz podsumowanie.', ephemeral=True)
+        excel = Excel(self.interaction, self.recru_channel_log_id)
+        await excel.add_player_to_excel(self.name, self.choice, in_house=self.in_house, recru_process=self.recru_process, comment=self.comment)
+        del excel
+
+class MyModelDelPlayer(FormAddPlayer):
+    def __init__(self, interaction, choice):
+        super().__init__(title='Formularz', interaction=interaction, choice=choice)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.send_message(f'Formularz został wysłany. Na {interaction.guild.get_channel(self.recru_channel_log_id).mention} zobacz podsumowanie.', ephemeral=True)
+        excel = Excel(self.interaction)
+        await excel.del_player_to_excel(self.name, self.comment)
+        del excel
 
 class MyReset(discord.ui.View):
     def __init__(self) -> None:
@@ -54,7 +101,7 @@ class MyReset(discord.ui.View):
 
 class MySelect(discord.ui.View):
     excel = Excel()
-    select_options = excel.get_name_sheet()
+    select_options = None
     
     @discord.ui.select(placeholder = "Który lineup", options=select_options)
     async def select_reset_TW(self, interaction: discord.Interaction, select_item: discord.ui.Select):
@@ -65,70 +112,3 @@ class MySelect(discord.ui.View):
             await interaction.edit_original_response(content='Czyszczenie wykonane!!!')
         except:
             await interaction.response.send_message('coś poszło nie tak!!', ephemeral=True)
-
-class MyModelAddPlayer_1(discord.ui.Modal, title='Formularz'):
-    def __init__(self, interaction, choice):
-        super().__init__()
-        self.interaction = interaction
-        self.choice = choice
-
-    name = ui.TextInput(label='Nazwa', placeholder="Rien")
-    request = ui.TextInput(label='Czy wysłał zaproszenie do rodu?', placeholder="tak/nie", required=False)
-    in_dc = ui.TextInput(label='Czy dołączył na dc?', placeholder="tak/nie", required=False)
-    comment = ui.TextInput(label='Komentarz (opcjonalne)', style=discord.TextStyle.long, required=False)
-    rekrut = "-"
-    in_house = "-"
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f'Formularz został wysłany. Na {interaction.guild.get_channel(1100724286139940948).mention} zobacz podsumowanie.', ephemeral=True)
-        excel = Excel(self.interaction)
-        await excel.add_player_to_excel(self.name, self.choice, self.in_house, self.rekrut, self.comment, self.request, self.in_dc)
-
-class MyModelAddPlayer_2(discord.ui.Modal, title='Formularz'):
-    def __init__(self, interaction, choice):
-        super().__init__()
-        self.interaction = interaction
-        self.choice = choice
-  
-    name = ui.TextInput(label='Nazwa (Pamiętaj najpier zmień nick!)', placeholder="Rien")
-    in_house = ui.TextInput(label='Czy w rodzie?', placeholder="1/2/nie", required=False)
-    rekrut = ui.TextInput(label='Czy przeszedł rekrutacje?', placeholder="tak/nie", required=False)
-    comment = ui.TextInput(label='Komentarz (opcjonalne)', style=discord.TextStyle.long, required=False)
-    in_dc = "-"
-    request = "-"
-  
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f'Formularz został wysłany. Na {interaction.guild.get_channel(1100724286139940948).mention} zobacz podsumowanie.', ephemeral=True)
-        excel = Excel(self.interaction)
-        await excel.add_player_to_excel(self.name, self.choice, self.in_house, self.rekrut, self.comment, self.request, self.in_dc)
-
-class MyModelAddPlayer_3(discord.ui.Modal, title='Formularz'):
-    def __init__(self, interaction, choice):
-        super().__init__()
-        self.interaction = interaction
-        self.choice = choice
-
-    name = ui.TextInput(label='Nazwa (Pamiętaj najpier zmień nick!)', placeholder="Rien")
-    in_house = ui.TextInput(label='Czy w rodzie?', placeholder="1/2/nie", required=False)
-    rekrut = "tak"
-    comment = ui.TextInput(label='Komentarz (opcjonalne)', style=discord.TextStyle.long, required=False)
-    in_dc = "tak"
-    request = "-"
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f'Formularz został wysłany. Na {interaction.guild.get_channel(1100724286139940948).mention} zobacz podsumowanie.', ephemeral=True)
-        excel = Excel(self.interaction)
-        await excel.add_player_to_excel(self.name, self.choice, self.in_house, self.rekrut, self.comment, self.request, self.in_dc)
-
-class MyModelDelPlayer(discord.ui.Modal, title='Formularz'):
-    def __init__(self, interaction):
-        super().__init__()
-        self.interaction = interaction
-
-    name = ui.TextInput(label='Nazwa', placeholder="Rien")
-    comment = ui.TextInput(label='Info dlaczego został wywalony (opcjonalne)', style=discord.TextStyle.long, required=False)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f'Formularz został wysłany. Na {interaction.guild.get_channel(1100724286139940948).mention} zobacz podsumowanie.', ephemeral=True)
-        excel = Excel(self.interaction)
-        await excel.del_player_to_excel(self.name, self.comment)

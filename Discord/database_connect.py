@@ -25,6 +25,20 @@ class Database():
       10:("ID sojuszowego serwera", "alliance_server_id"),
       11:("ID ról na sojuszowym (jako pierwszą role podaj swoją)", "roles"),
       }
+    #inaczej połączyć z powyżej
+    self.tables = {
+      "TW_excel": "Excel_Links",
+      "General_excel": "Excel_Links",
+      "basic_roles": "Roles",
+      "recruiter_id": "Roles",
+      "lineup_roles": "Roles",
+      "officer_id": "Roles",
+      "main_id": "Channels",
+      "general_logs_id": "Channels",
+      "recruiter_logs_id": "Channels",
+      "alliance_server_id": "Alliance_Server",
+      "roles": "Alliance_Server"
+    }
 
   def connect_with_db(self):#łączy się z bazą danych
     try:
@@ -39,6 +53,13 @@ class Database():
       return mydb
     except Exception as e:
       print(e)
+
+  def keep_alive(self):
+    try:
+        self.mydb.ping(reconnect=True, attempts=3, delay=5)
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        self.mydb.reconnect(attempts=3, delay=5)
 
   def get_tables(self): # pobiera wszystkie tabele
     self.cursor.execute("SHOW TABLES")
@@ -81,7 +102,10 @@ class Database():
   def get_results(self, sql, val):
     self.cursor.execute(sql, val)
     results = self.cursor.fetchall()
-    return results
+    if results and type(results[0][0]) == str:
+      results = json.loads(results[0][0])
+      return results
+    return results[0][0]
 
   async def bot_configuration(self, user, id):
     #zapisanie który użytkownik z jakiego dc edytuje można sprówbować stworzyć nową funkcję
@@ -92,17 +116,17 @@ class Database():
     data_to_display = {}
     #pobranie wartości z tabeli Excel_links
     tables_and_columns = self.get_columns(self.get_tables())
-    
+    #pobieram wszystkie tabele i kolumny z bazy, sprawwdzam czy w danej tabeli nie ma kolumny "discord_server_id", jeśli tak usuwam ją i robie zapytanie
     for table, columns in tables_and_columns.items():
-      column_names = [column_name for column_name, column_type in columns]
+      column_names = [column_name for column_name, _ in columns]
       if "discord_server_id" in column_names:
         column_names.remove("discord_server_id")
         results = self.get_results(f"SELECT {', '.join(column_names)} FROM {table} WHERE discord_server_id = %s", (id, ))
-        for i in range(len(column_names)):
+        for i in range(len(column_names)): # mając wynik zapytania zapisuje to do słownika, nazywając klucze od nazw kolumn
           if results and results[0][i]:
             data_to_display[column_names[i]] = results[0][i]
 
-    #tworzenie pól 
+    #tworzenie pola embed
     for i in range(1, len(self.conf_field)+1):
       embed.add_field(name=f"{i}. {self.conf_field[i][0]}", value=f"```python\n{data_to_display.get(self.conf_field[i][1], 'Brak')}\n```", inline=False)
     await user.send(embed=embed)
@@ -137,7 +161,19 @@ class Database():
     for table, columns in tables_and_columns.items():
       for name, type in columns:
         if name == edited_field:
-          if type == "varchar(255)": #gdy podajemy więcej niż jedną role konwertujemy na json
+          if type == "varchar(255)" and name not in ["TW_excel", "General_excel"]: #gdy podajemy więcej niż jedną role konwertujemy na json
             data = json.dumps(data.split(","))
           self.send_data(f"INSERT INTO {table} (discord_server_id, {edited_field}) VALUES (%s, %s) ON DUPLICATE KEY UPDATE {edited_field} = VALUES({edited_field});""", (edited_guild, data))
           break
+
+  def del_editing_user(self, user):
+    self.editing_users[user.display_name]
+    self.edited_guild[user.display_name]
+
+  def get_specific_value(self, id, column_name):
+    specific_value = self.get_results(f"SELECT {column_name} FROM {self.tables[column_name]} WHERE discord_server_id = %s", (id, ))
+    if specific_value:
+      return specific_value
+    return specific_value
+
+    
