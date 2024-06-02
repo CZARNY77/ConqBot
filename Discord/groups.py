@@ -4,10 +4,14 @@ import asyncio
 class CreateGroupsBtn(discord.ui.View):
     def __init__(self, bot) -> None:
         super().__init__(timeout = None)
-        self.bot = bot
         self.edit_group_btn = EditGroupBtn()
         bot.add_view(self.edit_group_btn)
         
+        @bot.command()    
+        async def createGroup(ctx):
+            await bot.del_msg(ctx)
+            await ctx.send(view=self)
+
     #custom emoji w przyciskach
     newEmoji = discord.PartialEmoji(name="ojej", id=887058401132183623)
     @discord.ui.button(label="Stwórz Grupe", custom_id="btn_group-1", style=discord.ButtonStyle.success, emoji=newEmoji)

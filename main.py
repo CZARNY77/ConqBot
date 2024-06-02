@@ -2,20 +2,25 @@ import io
 import discord
 import datetime
 from typing import Any
-from datetime import datetime
+from datetime import datetime, timezone
 from discord.ext import tasks, commands
-from discord import app_commands, ChannelType
-from Discord.presence import Pings
-from Discord.excel import Excel
+from Discord.presencePing import Pings
+from Discord.presenceTW import Presence
 from Discord.list import Lists
 from Discord.others import Binds, Others
 from Discord.Models import MyView, MyReset
 from Discord.groups import CreateGroupsBtn
 from Discord.planTW import CreatePlanBtn
+from Discord.viewMenu import ViewMenu
 from Discord.database_connect import Database
 import os
 from dotenv import load_dotenv
 import asyncio
+import requests
+import json
+from Discord.programming_patterns.Bridge import Bridge
+from Discord.programming_patterns.Decorator import DecoratedView
+
 
 intents = discord.Intents.all()
 intents.message_content = True
@@ -30,50 +35,29 @@ permissions.manage_roles = True
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(intents=intents, command_prefix='>')
-        self.createGroupsBtn = None
-        self.createPlanBtn = None
-        self.db = None
-        self.recruView = None
         self.wait_msg = False
         self.editing_user = {}
-        
-        @self.command()
-        async def config(ctx):
-            try:
-                await self.db.bot_configuration(ctx.author, ctx.guild.id)
-                self.wait_msg = True
-                self.editing_user[ctx.author.display_name] = ctx.author
-                await self.wait_for("message", timeout=60, check=lambda m: m.author == ctx.author)
-            except asyncio.TimeoutError:
-                await ctx.author.send("Przekroczono czasowy limit!")
-                self.wait_msg = False
-                self.db.del_editing_user(self.editing_user[ctx.author.display_name])
-                del self.editing_user[ctx.author.display_name]
-
-        @self.command()    
-        async def createGroup(ctx):
-            await ctx.send(view=self.createGroupsBtn)
-        
-        @self.command()
-        async def createPlan(ctx):
-            await ctx.send(view=self.createPlanBtn)
-        
-        @self.command(name="rekru")
-        async def rekrutacja(ctx):
-            await ctx.send("Rekrutacja!!", view=self.recruView)
+        with open('Discord/Keys/config.json', 'r') as file:
+            self.url = json.load(file)["kop_whitelist"]
 
     async def on_ready(self):
         try:
-            self.db = Database(self)
-            self.db.servers_verification(self.guilds)
-            self.createGroupsBtn = CreateGroupsBtn(self)
-            self.createPlanBtn = CreatePlanBtn(self)
-            self.recruView = MyView()
-            self.add_view(self.createGroupsBtn)
-            self.add_view(self.createPlanBtn)
-            self.add_view(self.recruView)
+            #self.add_all_players()
+            #self.bridge = Bridge(self)
+            #self.decorator = DecoratedView(self)
+            #self.add_view(self.decorator)
+            self.viewMenu = ViewMenu(self)
+            self.add_view(self.viewMenu)
+            self.class_initialize()
+            await self.tree.sync()
             self.loop_always.start()
-            print("Bot is Ready.")
+            
+            #results = self.db.get_results(f"SELECT discord_server_id, alliance_server_id FROM Alliance_Server", ( ))
+            #print(results[0][0], results[0][1])
+            #await self.presenceTW.get_apollo_list(results[1][0])
+            #await self.presenceTW.get_attendance(results[1][0], results[1][1])
+
+            print(f"Bot is Ready. {datetime.now().strftime('%H:%M')}")
         except Exception as e:
             print(f"error {e}")
 
@@ -94,37 +78,71 @@ class MyBot(commands.Bot):
     async def on_guild_join(self, guild):
         self.db.one_server_verification(guild)
 
+    async def on_member_ban(self, guild, user):
+        await user.send(f'**Zostałeś zbanowany.**\nhttps://media.discordapp.net/attachments/1105633406764732426/1243121426828099635/BANhammer.gif?ex=6650528c&is=664f010c&hm=c294de1f339a4ca0ad4e73a943e92efe8defaba361330b41c22c8387060f10f5&=')
+
+    async def on_member_unban(self, guild, user):
+        await user.send(f'**Dostałeś unbana.**\nhttps://images-ext-1.discordapp.net/external/sVt4pSwpFwOuzSsYsNdn-v1mW4Vpp7gbYpgGydZdUFw/https/media.tenor.com/7QHbdGI_bZEAAAPo/genie-free-me.mp4')
+
+    async def on_member_update(self, before, after):
+        # Sprawdzamy, czy użytkownik został wysłany na przerwę
+        if before.timed_out_until != after.timed_out_until and after.timed_out_until:
+            # Użytkownik został wysłany na przerwę
+            time_left = after.timed_out_until - datetime.now(timezone.utc) # obliczaniue ile ma przerwy
+            minutes_left = int(time_left.total_seconds() / 60)
+            seconds_left = int(time_left.total_seconds() % 60)
+            await after.send(f"Masz przerwe na {minutes_left} min {seconds_left} sec.\nhttps://media.discordapp.net/attachments/1105633406764732426/1243121426828099635/BANhammer.gif?ex=6650528c&is=664f010c&hm=c294de1f339a4ca0ad4e73a943e92efe8defaba361330b41c22c8387060f10f5&=")
+
     @tasks.loop(seconds=60)
     async def loop_always(self):
         self.db.keep_alive()
 
+    async def del_msg(self, ctx):
+        async for message in ctx.channel.history(limit=1):
+            await message.delete()
+
+    def add_all_players(self):
+        serwer = self.get_guild(1232957904597024882)
+        for member in serwer.members:
+            #Sprawdzanie czy taki gracz już istnieje
+            response = requests.get(self.url)
+            response.raise_for_status() 
+            data = response.json()
+            found_player = False
+            for row in data["whitelist"]: #przeszukuje całą listę
+                if str(member.id) == row["idDiscord"]:
+                    found_player = True
+                    break
+            if not found_player and not member.bot:
+                data = {
+                    "idDiscord": str(member.id)
+                }
+                response = requests.post(self.url, json=data)
+                response.raise_for_status()
+
+    def class_initialize(self):
+        self.db = Database(self)
+        self.db.servers_verification(self.guilds)
+        self.createGroupsBtn = CreateGroupsBtn(self)
+        self.createPlanBtn = CreatePlanBtn(self)
+        self.recruView = MyView(self)
+        self.binds = Binds(self)
+        self.others = Others(self)
+        self.pings = Pings(self)
+        #self.myReset = MyReset()
+        self.presenceTW = Presence(self)
+        self.tree.add_command(Lists(self))
+        self.tree.add_command(self.binds)
+        self.add_view(self.createGroupsBtn)
+        self.add_view(self.createPlanBtn)
+        self.add_view(self.recruView)
 
 bot = MyBot()
 load_dotenv()
 bot.run(os.getenv('BOT_TOKEN'))
 
 
-'''@bot.event
-async def on_ready():
-    global binds
-    global myView
-    global myReset
-    binds = Binds(bot)
-    myView = MyView()
-    myReset = MyReset()
-    loop_always.start()
-    try:
-        bot.tree.add_command(Lists(bot))
-        bot.tree.add_command(binds)
-        bot.add_view(myView)
-        bot.add_view(myReset)
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} commands")
-    except Exception as e:
-        print(f'error: {e}')
-    print("Bot is Ready. " + datetime.now().strftime("%H:%M"))
-
-
+'''
 @tasks.loop(seconds=60)
 async def loop_always():
     day = datetime.now().strftime("%A")
@@ -137,23 +155,17 @@ async def loop_always():
             players_list = await sheet.get_name_from_server(server)
             await sheet.connect_with_excel(players_list, "TW")
             del sheet
-        if time == "19:30":
-            list = Lists(bot)
-            await list.initialize()
-            del list
+        if time == "19:30": 
+            results = self.db.get_results(f"SELECT alliance_server_id FROM Alliance_Server", ( ))
+            for result in results:
+                if result[0]:
+                    print(result[0])
+                    await self.list.initialize(result[0])
         if time == "18:00":
             print("apollo")
             sheet = Excel(bot)
             await sheet.get_apollo_list()
             del sheet
-
-
-@bot.tree.command(name="warthog")
-@app_commands.describe(member="np. @Krang")
-async def warthog(ctx: discord.Interaction, member: discord.Member):
-    others = Others(bot)
-    await others.warthog(ctx, member)
-    del others
 
 @bot.event
 async def on_message(message):
@@ -166,30 +178,6 @@ async def on_message(message):
                 if msg.content == "@epizodyPL":
                     for embed in msg.embeds:
                         await GetList(embed.title)
-
-@bot.command(name="ping")
-async def ping(ctx):
-    ping = Pings()
-    await ping.initialize(ctx)
-    await ping.del_msg()
-    await ping.ping_unchecked()
-    del ping
-
-@bot.command(name="ping_to_priv")
-async def ping_to_priv(ctx):
-    ping = Pings()
-    await ping.initialize(ctx)
-    await ping.del_msg()
-    await ping.ping_to_priv()
-    del ping
-
-@bot.command(name="ping_t")
-async def ping_t(ctx):
-    ping = Pings()
-    await ping.initialize(ctx)
-    await ping.del_msg()
-    await ping.ping_tentative()
-    del ping
 
 @bot.command()
 async def list_TW(ctx):
@@ -208,48 +196,7 @@ async def list_adt(ctx):
         del excel
     except:
         await ctx.send("ups... coś poszło nie tak 'error: get_apollo_list")
-
-@bot.command() # przenieść do klasy excel
-async def ankieta(ctx):
-    try:
-        excel = Excel(bot)
-        players = await excel.get_all_players()
-        players = await excel.get_excel_players(players)
-        players = await excel.change_to_text(players)
-        await excel.del_msg(ctx)
-        list = Lists(bot)
-        await list.default_embed(ctx.channel, players)
-        del list
-        del excel
-    except:
-        await ctx.send("ups... coś poszło nie tak 'error: ankieta")
-
-@bot.command() # przenieść do klasy excel
-async def ankieta_ping(ctx):
-    try:
-        excel = Excel(bot)
-        players = await excel.get_all_players()
-        players = await excel.get_excel_players(players)
-        await excel.del_msg(ctx)
-        msg_to_send = ""
-        i = 0
-        for player in players:
-            i += 1
-            msg_to_send += player.mention
-            if i >= 90:
-                i = 0
-                await ctx.channel.send(msg_to_send)
-                msg_to_send = ""
-                await ctx.channel.send(msg_to_send)
-        del excel
-    except:
-        await ctx.send("ups... coś poszło nie tak 'error: ankieta_ping")
     
-@bot.command()
-async def rekrutacja(ctx):
-    global myView
-    await ctx.send("Rekrutacja!!", view=myView)
-
 @bot.command()
 async def reset_TW(ctx):
     global myReset

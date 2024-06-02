@@ -4,22 +4,30 @@ import discord
 class Lists(app_commands.Group):
     def __init__(self, bot):
         super().__init__(name="lista")
-        self.guild = bot.get_guild(1100724285246558208)
-        self.TW_list_channel = bot.get_channel(1100887633976119439)
-        self.house_roles = ["Kalambury", "Episkopat"]
+        self.bot = bot
 
-    async def initialize(self):
+    def set_parameters(self, guild_id):
+        self.house_roles = self.bot.db.get_specific_value(guild_id, "roles")
+        logs = self.bot.db.get_specific_value(guild_id, "general_logs_id")
+        self.TW_list_channel = self.bot.get_channel(logs)
+        self.guild = self.bot.get_guild(guild_id)
+        
+
+    async def initialize(self, guild_id):
+        self.set_parameters(guild_id)
+        if self.guild == None and self.TW_list_channel == None:
+            return
         house_player_list = []
         sum_players = 0
         for house_role in self.house_roles:
-            house_player_list.append(await self.get_players_by_roles(house_role, self.guild.voice_channels))
+            house_player_list.append(await self.get_players_by_roles(int(house_role), self.guild.voice_channels))
             sum_players += len(house_player_list[len(house_player_list)-1])
             
         self.embed = discord.Embed(title=f"Players: {sum_players}", color=0x9900FF)
 
         for i in range(len(self.house_roles)):
-            await self.create_embed(house_player_list[i], self.house_roles[i])
-
+            role = self.bot.get_guild(guild_id).get_role(int(self.house_roles[i]))
+            await self.create_embed(house_player_list[i], role.name)
         try:
             await self.TW_list_channel.send(embed=self.embed)
         except:
@@ -31,13 +39,8 @@ class Lists(app_commands.Group):
             if channel.members != []:
                 for member in channel.members:
                     for role in member.roles:
-                        if role.name == str(house_role):
-                            if member.nick != None:
-                                players_list += (member.nick,)
-                            elif member.global_name != None:
-                                players_list += (member.global_name,)
-                            elif member.name != None:
-                                players_list += (member.name,)
+                        if role.id == house_role:
+                            players_list += (member.display_name,)
         return players_list
     
     async def get_players(self, voice_channels):
@@ -48,12 +51,7 @@ class Lists(app_commands.Group):
             if channel.members != []:
                 for member in channel.members:
                     self.count_members += 1
-                    if member.nick != None:
-                        players_list += (member.nick,)
-                    elif member.global_name != None:
-                        players_list += (member.global_name,)
-                    elif member.name != None:
-                        players_list += (member.name,)
+                    players_list += (member.display_name,)
                 channels[channel] = players_list
                 players_list = ()
         return channels
@@ -81,7 +79,7 @@ class Lists(app_commands.Group):
             await channel.send(f"ups.. coś poszło nie tak 'error default_embed'")
   
     @app_commands.command(name="roli")
-    @app_commands.describe(role = "np. @DiesMeda")
+    @app_commands.describe(role = "np. @Member")
     async def list_role(self, ctx, role : discord.Role):
         try:
             await ctx.response.send_message(f"Pracuje...")
@@ -97,7 +95,7 @@ class Lists(app_commands.Group):
     async def list_TW(self, ctx):
         try:
             await ctx.response.send_message(f"Pracuje...")
-            await self.initialize()
+            await self.initialize(ctx.guild.id)
             await ctx.delete_original_response()
         except:
             await ctx.response.send_message(f"ups.. coś poszło nie tak 'error list_TW'")
@@ -110,28 +108,6 @@ class Lists(app_commands.Group):
         self.embed = discord.Embed(title=f"Players: {self.count_members}", color=0x9900FF)
 
         for channel_name, players in channels.items():
-            #print(f"{channel_name}: {players}")`
             await self.create_embed(players, channel_name)
-        await ctx.channel.send(embed=self.embed)
-        await ctx.delete_original_response()
-
-    @app_commands.command(name="all")
-    async def list_all_players(self, ctx):
-        await ctx.response.send_message(f"Pracuje...")
-        house_players = []
-        all_players = ctx.guild.members
-        for player in all_players:
-            for role in player.roles:
-                if role.id == 1153061989074075728 or role.id == 1153061802880532550:
-                    if player.nick != None:
-                        house_players.append(player.nick)
-                    elif player.global_name != None:
-                        house_players.append(player.global_name)
-                    else:
-                        house_players.append(player.name)
-      
-        self.embed = discord.Embed(title=f"Players: {len(house_players)}", color=0x9900FF)
-
-        await self.create_embed(house_players, "All")
         await ctx.channel.send(embed=self.embed)
         await ctx.delete_original_response()

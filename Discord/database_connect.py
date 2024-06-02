@@ -1,34 +1,31 @@
 import mysql.connector
 import discord
 import json
-
+import asyncio
 
 class Database():
   def __init__(self, bot) -> None:
+    self.bot = bot
     self.mydb = self.connect_with_db()
     self.cursor = self.mydb.cursor()
-    self.bot = bot
     self.edited_field = {}
     self.editing_users = {}
     self.edited_guild = {}
     #przenieś do json
     self.conf_field = {
-      1:("Link do excela TW", "TW_excel"),
-      2:("Link do ogólnego Excela", "General_excel"),
-      3:("ID podstawowych ról (podajemy po przecinku)", "basic_roles"),
-      4:("ID roli rekrutera", "recruiter_id"),
-      5:("ID ról lineup'ów (podajemy po przecinku)", "lineup_roles"),
-      6:("ID roli oficerów (od tej roli w góre)", "officer_id"),
-      7:("ID głównego kanału", "main_id"),
-      8:("ID głównego kanału na logi", "general_logs_id"),
-      9:("ID kanału na logi rekruterów", "recruiter_logs_id"),
-      10:("ID sojuszowego serwera", "alliance_server_id"),
-      11:("ID ról na sojuszowym (jako pierwszą role podaj swoją)", "roles"),
+      1:("ID podstawowych ról (podajemy po przecinku)", "basic_roles"),
+      2:("ID roli rekrutera", "recruiter_id"),
+      3:("ID ról lineup'ów (podajemy po przecinku)", "lineup_roles"),
+      4:("ID roli oficerów (od tej roli w góre)", "officer_id"),
+      5:("ID głównego kanału", "main_id"),
+      6:("ID głównego kanału na logi", "general_logs_id"),
+      7:("ID kanału na logi rekruterów", "recruiter_logs_id"),
+      8:("ID kanałów z obecnością (podajemy po przecinku)","presence_channels_id"),
+      9:("ID serwera na TW", "alliance_server_id"),
+      10:("ID ról na TW (jako pierwszą role podaj swoją)", "roles"),
       }
     #inaczej połączyć z powyżej
     self.tables = {
-      "TW_excel": "Excel_Links",
-      "General_excel": "Excel_Links",
       "basic_roles": "Roles",
       "recruiter_id": "Roles",
       "lineup_roles": "Roles",
@@ -36,19 +33,37 @@ class Database():
       "main_id": "Channels",
       "general_logs_id": "Channels",
       "recruiter_logs_id": "Channels",
+      "presence_channels_id": "Channels",
       "alliance_server_id": "Alliance_Server",
       "roles": "Alliance_Server"
     }
 
+    @bot.command()
+    async def config(ctx):
+      await bot.del_msg(ctx)
+      if self.check_role_permissions(ctx.message.author, ctx.guild.id):
+          try:
+              await self.bot_configuration(ctx.author, ctx.guild.id)
+              bot.wait_msg = True
+              bot.editing_user[ctx.author.display_name] = ctx.author
+              await bot.wait_for("message", timeout=60, check=lambda m: m.author == ctx.author)
+          except asyncio.TimeoutError:
+              await ctx.author.send("Przekroczono czasowy limit!")
+              bot.wait_msg = False
+              self.del_editing_user(bot.editing_user[ctx.author.display_name])
+              del bot.editing_user[ctx.author.display_name]
+      else:
+          await ctx.message.author.send("Nie masz uprawnien!")
+
   def connect_with_db(self):#łączy się z bazą danych
     try:
-      with open('Discord/Keys/id_list.json', 'r') as file:
-        id_list = json.load(file)
+      with open('Discord/Keys/config.json', 'r') as file:
+        config = json.load(file)
       mydb = mysql.connector.connect(
-        host=id_list["host"],
-        user=id_list["user"],
-        password=id_list["password"],
-        database=id_list["database"]
+        host=config["host"],
+        user=config["user"],
+        password=config["password"],
+        database=config["database"]
       )
       return mydb
     except Exception as e:
@@ -96,16 +111,13 @@ class Database():
   def one_server_verification(self, server): #sprawdzanie czy serwer nie jest w bazie danych
     self.cursor.execute("SELECT ID FROM Discord_Servers")
     results = self.cursor.fetchall()
-    if server.id not in results:
+    if server.id not in (result[0] for result in results):
       self.add_new_guild(server.id, server.name)
 
   def get_results(self, sql, val):
     self.cursor.execute(sql, val)
     results = self.cursor.fetchall()
-    if results and type(results[0][0]) == str:
-      results = json.loads(results[0][0])
-      return results
-    return results[0][0]
+    return results
 
   async def bot_configuration(self, user, id):
     #zapisanie który użytkownik z jakiego dc edytuje można sprówbować stworzyć nową funkcję
@@ -124,7 +136,9 @@ class Database():
         results = self.get_results(f"SELECT {', '.join(column_names)} FROM {table} WHERE discord_server_id = %s", (id, ))
         for i in range(len(column_names)): # mając wynik zapytania zapisuje to do słownika, nazywając klucze od nazw kolumn
           if results and results[0][i]:
-            data_to_display[column_names[i]] = results[0][i]
+            new_result = self.check_type(results[0][i], id, column_names[i])
+            #print(new_result)
+            data_to_display[column_names[i]] = new_result
 
     #tworzenie pola embed
     for i in range(1, len(self.conf_field)+1):
@@ -161,19 +175,62 @@ class Database():
     for table, columns in tables_and_columns.items():
       for name, type in columns:
         if name == edited_field:
-          if type == "varchar(255)" and name not in ["TW_excel", "General_excel"]: #gdy podajemy więcej niż jedną role konwertujemy na json
+          data = data.replace(' ', '')
+          if type == "varchar(255)": #gdy podajemy więcej niż jedną role konwertujemy na json
             data = json.dumps(data.split(","))
           self.send_data(f"INSERT INTO {table} (discord_server_id, {edited_field}) VALUES (%s, %s) ON DUPLICATE KEY UPDATE {edited_field} = VALUES({edited_field});""", (edited_guild, data))
           break
 
   def del_editing_user(self, user):
-    self.editing_users[user.display_name]
-    self.edited_guild[user.display_name]
+    del self.editing_users[user.display_name]
+    del self.edited_guild[user.display_name]
 
   def get_specific_value(self, id, column_name):
     specific_value = self.get_results(f"SELECT {column_name} FROM {self.tables[column_name]} WHERE discord_server_id = %s", (id, ))
-    if specific_value:
+    if specific_value and type(specific_value[0][0]) == str:
+      specific_value = json.loads(specific_value[0][0])
       return specific_value
-    return specific_value
+    elif specific_value:
+      return specific_value[0][0]
+    return None
 
-    
+  def check_role_permissions(self, member, id):
+    if member.guild_permissions.administrator:
+      return True
+    service = self.get_results(f"SELECT officer_id FROM Roles WHERE discord_server_id = %s", (id, ))
+    for role in member.roles:
+      if role.id == service[0][0]:
+        return True
+    return False
+  
+  def check_type(self, results, id, column_name): # 
+    guild = self.bot.get_guild(id)
+    if type(results) == str:
+      results = json.loads(results)
+      results = list(map(int, results))
+    if isinstance(results, int):
+        try:
+          if self.tables[column_name] in ["Roles"]:
+            return guild.get_role(results).name
+          elif self.tables[column_name] in ["Channels"]:
+            return guild.get_channel(results).name
+          elif column_name in ["alliance_server_id"]:
+            return guild.name
+          return results
+        except:
+          return "Nie znaleziono ID"
+    elif isinstance(results, list):
+        new_result = []
+        for result in results:
+          try:
+            if self.tables[column_name] in ["Roles"]:
+              new_result.append(guild.get_role(result).name)
+            elif self.tables[column_name] in ["Channels"]:
+              new_result.append(guild.get_channel(result).name)
+            elif column_name in ["roles"]:
+              new_result.append(guild.get_role(result).name)
+          except:
+            new_result.append("Nie znaleziono ID")
+        return new_result
+    else:
+        return results

@@ -1,42 +1,49 @@
-import os
 import json
 import discord
 from discord.ext import commands
-import datetime
-from datetime import datetime
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from google.oauth2.credentials import Credentials
+import requests
 
-class Excel(commands.Cog):
+class Recruitment(commands.Cog):
     def __init__(self, interaction = None, log_channel = None):
         self.interaction = interaction
+        with open('Discord/Keys/config.json', 'r') as file:
+          self.url = json.load(file)["kop_whitelist"]
         if interaction != None:
-            self.bot = interaction.client
-            self.basic_roles = self.bot.db.get_specific_value(interaction.guild_id, "basic_roles")
-            self.lineup_roles = self.bot.db.get_specific_value(interaction.guild_id, "lineup_roles")
-            main_channel = self.bot.db.get_specific_value(interaction.guild_id, "main_id")
-            self.members = interaction.guild.members
-            self.log_channel = interaction.guild.get_channel(log_channel) # kanał z logami
-            self.chat_channel = interaction.guild.get_channel(main_channel) # kanał pogaduchy
-            self.Demi = interaction.guild.get_member(462341202600263681)
-            self.embed_color = interaction.user.color
+          self.bot = interaction.client
+          self.basic_roles = self.bot.db.get_specific_value(interaction.guild_id, "basic_roles")
+          self.lineup_roles = self.bot.db.get_specific_value(interaction.guild_id, "lineup_roles")
+          main_channel = self.bot.db.get_specific_value(interaction.guild_id, "main_id")
+          self.members = interaction.guild.members
+          self.log_channel = interaction.guild.get_channel(log_channel) # kanał z logami
+          self.chat_channel = interaction.guild.get_channel(main_channel) # kanał pogaduchy
+          self.embed_color = interaction.user.color
 
-    async def add_player_to_excel(self, player_name, choice, in_house = None, recru_process = None, comment = None, request = None):
+    async def add_player_to_whitelist(self, player_name, choice, in_house = None, recru_process = None, comment = None, request = None):
         try:
           member_mention = self.get_user(player_name)
-          current_data = datetime.now().strftime("%Y-%m-%d")
-          
           if member_mention == "-":
             await self.create_embed(4, player_name, member_mention, comment)
             return
-
           #Sprawdzanie czy taki gracz już istnieje
-          if False:
-              await self.create_embed(3, player_name)
-              return
-              
+          response = requests.get(self.url)
+          response.raise_for_status() 
+          data = response.json()
+          found_player = False
+          for row in data["whitelist"]: #przeszukuje całą listę
+            if str(player_name) == row["usernameDiscord"]:
+              found_player = True
+              break
+          
+          #if found_player and choice != 2: #jeżeli gracz znaleziony i drugi etap rekrutacyjny 
+             #await self.create_embed(3, player_name, member_mention)
+              #return
+          #elif not found_player: 
+          data = {
+              "idDiscord": str(member_mention.id)
+          }
+          response = requests.post(self.url, json=data)
+          response.raise_for_status()  # Raises an HTTPError if the HTTP request returned an unsuccessful status code
+
           if choice == 1:
             #dodanie rekruterowi punktów
             #await self.points(choice)
@@ -49,18 +56,18 @@ class Excel(commands.Cog):
 
               #dodanie ról graczowi i wysłanie mu wiadomości
               await self.add_roles(member_mention, in_house)
-              await self.chat_channel.send(content = f"**Cześć {member_mention.mention}!**\nPrzywitaj się z wszystkimi.")
+              #await self.chat_channel.send(content = f"**Cześć {member_mention.mention}!**\nPrzywitaj się ze wszystkimi.")
               content = ""
               try:
                 await member_mention.send('''Witamy w rodzie, teraz kilka linków pomocniczych dla ciebie :saluting_face:
               Ankieta jednostek, pamiętaj zrobić jak tylko będziesz miał chwilkę czasu, to maks 2-3min:
-              https://
+              https://cb-social.vercel.app/
 
               Rozpiska jednostek na TW (można sobie dodać do zakładki):
               https://
 
               Oraz poradniki:
-              https://
+              https://discord.com/channels/1232957904597024882/1235004633974313123
               ''')
 
               except Exception as e:
@@ -68,15 +75,16 @@ class Excel(commands.Cog):
               await self.create_embed(2, player_name, member_mention, comment, in_house=in_house, recru_process=recru_process, content=content)
           except  Exception as e:
               await self.create_embed(0, player_name, member_mention, error=e)
-        except HttpError as error:
-          print(f'Coś poszło nie tak przy wpisywaniu do excela gracza {player_name}: {error}')
-          await self.log_channel.send(content = f"Coś poszło nie tak z graczem: {player_name}\nerror: {e}")
+        except requests.exceptions.HTTPError as e:
+          await self.log_channel.send(content = f"Wystąpił błąd HTTP: {e} \n {response.text}")
+        except requests.exceptions.RequestException as e:
+            await self.log_channel.send(content = f"Wystąpił błąd żądania: {e}")
 
     async def del_msg(self, ctx):
         async for message in ctx.channel.history(limit=1):
             await message.delete()
 
-    async def del_player_to_excel(self, player_name, comment):
+    async def del_player_to_whitelist(self, player_name, comment):
         try:
             player_found = False
             member_mention = self.get_user(player_name)
@@ -93,7 +101,7 @@ class Excel(commands.Cog):
               await self.create_embed(5, player_name, member_mention, comment, content=content)
             else:
               await self.create_embed(4, player_name, member_mention)
-        except HttpError as error:
+        except Exception as error:
             await self.create_embed(0, player_name, member_mention, error=error)
 
     async def create_embed(self, selection, player_name, member_mention, comment=None, in_house=None, recru_process=None, request=None, error=None, content=None):
@@ -135,29 +143,7 @@ class Excel(commands.Cog):
     async def points(self, choice):
       recruiter = self.interaction.user
       points = 0
-      try:
-        values = self.get_values(self.spreadsheet_id, self.recruiter_sheet)
-        row_num = len(values[0][0]) + 1
-        
-        for i, v in enumerate(values[0][0]):
-          if v.lower() == str(recruiter.global_name).lower():
-            points = int(values[0][1][i])
-            row_num = i+1
-            break
-        if choice == 1 or choice == 2:
-          points += 1
-        elif choice == 3:
-          points += 2
-        range_name = f'{self.recruiter_sheet}!{chr(ord("A"))}{row_num}:{chr(ord("B"))}{row_num}'
-        body = {
-          'values': [[str(recruiter.global_name), str(points)]]
-        }
-        # tworzenie zapytania
-        service = build('sheets', 'v4', credentials=self.credentials, discoveryServiceUrl=self.DISCOVERY_SERVICE_URL)
-        service.spreadsheets().values().update( spreadsheetId=self.spreadsheet_id, range=range_name, valueInputOption='RAW', body=body).execute()
-      except:
-        await self.log_channel.send(content = f"{recruiter.global_name}: {int(points)} pkt. ")
-
+      
     def get_user(self, player_name):
       member_mention = "-"
       for member in self.members:
@@ -178,12 +164,3 @@ class Excel(commands.Cog):
         roles_id.append(self.lineup_roles[1])
       roles_to_add = [discord.utils.get(member.guild.roles, id=int(role_id)) for role_id in roles_id]
       await member.add_roles(*roles_to_add, reason="Dodawanie nowych ról")
-
-    async def update_roles(self, member, in_house):
-      if member != "-":
-        second_house_role = discord.utils.get(member.roles, id=1106900620960600104)
-        if str(in_house) == "1" and second_house_role:
-          await member.remove_roles(second_house_role)
-        elif str(in_house) == "2" and not second_house_role:
-          role_add = member.guild.get_role(1106900620960600104)
-          await member.add_roles(role_add)

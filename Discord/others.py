@@ -112,6 +112,11 @@ class Binds(app_commands.Group):
 class Others(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+        @bot.tree.command(name="warthog")
+        @app_commands.describe(member="np. @Krang")
+        async def warthog(ctx: discord.Interaction, member: discord.Member):
+            await self.warthog(ctx, member)
     
     async def warthog(self, ctx, member):
         if member.id == 373563828513931266:

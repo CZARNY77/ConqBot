@@ -3,10 +3,14 @@ import discord
 class CreatePlanBtn(discord.ui.View):
     def __init__(self, bot) -> None:
         super().__init__(timeout = None)
-        self.bot = bot
         self.plan_view = PlanView()
         bot.add_view(self.plan_view)
         
+        @bot.command()
+        async def createPlan(ctx):
+            await bot.del_msg(ctx)
+            await ctx.send(view=self)
+
     #custom emoji w przyciskach
     newEmoji = discord.PartialEmoji(name="ojej", id=887058401132183623)
     @discord.ui.button(label="Stwórz Plan", custom_id="btn_plan-1", style=discord.ButtonStyle.success, emoji=newEmoji)

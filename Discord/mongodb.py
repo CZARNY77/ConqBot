@@ -1,7 +1,9 @@
 from pymongo import MongoClient
-
+import json
 # Ustawienie adresu URL połączenia. Jeśli korzystasz z MongoDB Atlas, możesz znaleźć ten URL w ustawieniach swojej bazy danych.
-mongo_url = "mongodb+srv://kkocot:JiDn48roqHcq6Tkd@cluster0.hzxavcu.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # Przykład lokalnego adresu URL. Zastąp odpowiednim URL, jeśli używasz MongoDB Atlas lub innego hosta.
+with open('Discord/Keys/config.json', 'r') as file:
+    login = json.load(file)["mongodb"]
+mongo_url = login  # Przykład lokalnego adresu URL. Zastąp odpowiednim URL, jeśli używasz MongoDB Atlas lub innego hosta.
 
 # Utworzenie klienta MongoDB
 client = MongoClient(mongo_url)
