@@ -7,30 +7,29 @@ import io
 class Binds(app_commands.Group):
     def __init__(self, bot):
         super().__init__(name="bind")
+        self.bot = bot
         self.DiesMeda = bot.get_guild(1100724285246558208)
         self.binds_channel = bot.get_channel(1179153163622813747) # database channel
 
     async def verification_msg(self, message):
-        async for bind in self.binds_channel.history(limit=100):
-            parts = bind.content.splitlines()
-            if parts[0].lower() in message.content.lower():
-                if len(parts) >= 2:
-                    await message.channel.send(parts[1])
-                elif bind.attachments:
-                    attachment = bind.attachments[0]
-                    file_content = await attachment.read()
-                    file = discord.File(io.BytesIO(file_content), filename=attachment.filename)
-                    await message.channel.send(file=file)
-                return
+        try:
+            async for bind in self.binds_channel.history(limit=100):
+                parts = bind.content.splitlines()
+                if parts[0].lower() in message.content.lower():
+                    if len(parts) >= 2:
+                        await message.channel.send(parts[1])
+                    elif bind.attachments:
+                        attachment = bind.attachments[0]
+                        file_content = await attachment.read()
+                        file = discord.File(io.BytesIO(file_content), filename=attachment.filename)
+                        await message.channel.send(file=file)
+                    return
+        except Exception as e:
+            print(f"Bindy error:\n{e}")
   
     def verification_users(self, ctx):
-        for member in self.DiesMeda.members:
-            if member.id == ctx.user.id:
-                for role in member.roles:
-                    if role.id in [1100724285246558210, 1100724285305274440]:
-                        return True
-        return False
-      
+        return self.bot.db.check_role_permissions(ctx.user, ctx.guild_id)
+    
     @app_commands.command(name="_")
     @app_commands.describe(tekst="np. Witam!", link = "jakiś link np. do gifa, obrazka albo tekst")
     async def bind(self, ctx: discord.Interaction, tekst: str, link: str):

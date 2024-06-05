@@ -8,6 +8,8 @@ class Recruitment(commands.Cog):
         self.interaction = interaction
         with open('Discord/Keys/config.json', 'r') as file:
           self.url = json.load(file)["kop_whitelist"]
+        self.recruitment_stage_1_points = 0.5
+        self.recruitment_stage_2_points = 0.5
         if interaction != None:
           self.bot = interaction.client
           self.basic_roles = self.bot.db.get_specific_value(interaction.guild_id, "basic_roles")
@@ -24,43 +26,48 @@ class Recruitment(commands.Cog):
           if member_mention == "-":
             await self.create_embed(4, player_name, member_mention, comment)
             return
+          self.add_to_database(member_mention.id, self.interaction.guild_id)#dodaje gracza do bazy
           #Sprawdzanie czy taki gracz już istnieje
           response = requests.get(self.url)
           response.raise_for_status() 
           data = response.json()
           found_player = False
           for row in data["whitelist"]: #przeszukuje całą listę
-            if str(player_name) == row["usernameDiscord"]:
+            if str(member_mention.id) == row["idDiscord"]:
               found_player = True
               break
           
-          #if found_player and choice != 2: #jeżeli gracz znaleziony i drugi etap rekrutacyjny 
-             #await self.create_embed(3, player_name, member_mention)
-              #return
-          #elif not found_player: 
-          data = {
-              "idDiscord": str(member_mention.id)
-          }
-          response = requests.post(self.url, json=data)
-          response.raise_for_status()  # Raises an HTTPError if the HTTP request returned an unsuccessful status code
+          if found_player and choice != 2: #jeżeli gracz znaleziony i drugi etap rekrutacyjny 
+            await self.create_embed(3, player_name, member_mention, comment)
+            return
+          elif not found_player: 
+            data = {
+                "idDiscord": str(member_mention.id)
+            }
+            response = requests.post(self.url, json=data)
+            response.raise_for_status()  # Raises an HTTPError if the HTTP request returned an unsuccessful status code
 
           if choice == 1:
             #dodanie rekruterowi punktów
-            #await self.points(choice)
+            self.bot.db.points(self.recruitment_stage_1_points, self.interaction.user.id, "recruitment_points")
             await self.create_embed(1, player_name, member_mention, comment, request=request)
             return
           try:
             if "tak" in str(recru_process).lower() and choice in [2, 3]:
               #dodanie rekruterowi punktów
-              #await self.points(choice)
+              points = self.recruitment_stage_1_points
+              if choice == 3:
+                points = self.recruitment_stage_1_points + self.recruitment_stage_2_points
+              self.bot.db.points(points, self.interaction.user.id, "recruitment_points")
 
               #dodanie ról graczowi i wysłanie mu wiadomości
               await self.add_roles(member_mention, in_house)
-              #await self.chat_channel.send(content = f"**Cześć {member_mention.mention}!**\nPrzywitaj się ze wszystkimi.")
+              await self.chat_channel.send(content = f"**Cześć {member_mention.mention}!**\nPrzywitaj się ze wszystkimi.")
               content = ""
               try:
+                pass
                 await member_mention.send('''Witamy w rodzie, teraz kilka linków pomocniczych dla ciebie :saluting_face:
-              Ankieta jednostek, pamiętaj zrobić jak tylko będziesz miał chwilkę czasu, to maks 2-3min:
+              Ankieta jednostek, pamiętaj zrobić jak tylko będziesz miał chwilkę czasu:
               https://cb-social.vercel.app/
 
               Rozpiska jednostek na TW (można sobie dodać do zakładki):
@@ -72,6 +79,9 @@ class Recruitment(commands.Cog):
 
               except Exception as e:
                 content = f"{self.interaction.user.mention}, {member_mention.mention} nie dostał wiadomości priv, najprawdopodobniej blokuje\nerror: {e}"
+              await self.create_embed(2, player_name, member_mention, comment, in_house=in_house, recru_process=recru_process, content=content)
+            elif "nie" in str(recru_process).lower() and choice in [2, 3]:
+              content = f"{self.interaction.user.mention} Jakim cudem przeprowadzasz 2 etap albo całą rekrutacje bez rekrutacji głosowej, miałeś tylko jedno zadnie!!!\n-5 punktów dla Slytherin'u"
               await self.create_embed(2, player_name, member_mention, comment, in_house=in_house, recru_process=recru_process, content=content)
           except  Exception as e:
               await self.create_embed(0, player_name, member_mention, error=e)
@@ -86,16 +96,12 @@ class Recruitment(commands.Cog):
 
     async def del_player_to_whitelist(self, player_name, comment):
         try:
-            player_found = False
             member_mention = self.get_user(player_name)
-          
-            #znalezienie gracza w bazie
-            if player_found:
-              #usunięcie gracza z listy
-              
+            if member_mention:
+              self.bot.db.del_with_whitelist(member_mention.id)
               content = ""
               try:
-                await member_mention.send(f'''Cześć z przykrością musimy powiadomoć że zostałeś usunięty z rodu za brak aktywności. Jeśli chciałbyś wrócić do gry napisz do {self.Demi.mention}.''')
+                await member_mention.send(f'''Cześć z przykrością musimy powiadomoć że zostałeś usunięty z rodu za brak aktywności.''')
               except:
                 content = f"{self.interaction.user.mention}, {member_mention.mention} nie dostał wiadomości priv, najprawdopodobniej blokuje"
               await self.create_embed(5, player_name, member_mention, comment, content=content)
@@ -108,7 +114,8 @@ class Recruitment(commands.Cog):
       ping = content
 
       embed = discord.Embed(
-          title=f'Gracz: {player_name}, DC: {member_mention}',
+          title=f'Gracz: {player_name}',
+          description=f"DC: {member_mention.mention}",
           color=self.embed_color
         )
       if selection == 1: # rekruter dodaje tylko na dc
@@ -140,9 +147,16 @@ class Recruitment(commands.Cog):
 
       await self.log_channel.send(content = ping,embed=embed)
 
-    async def points(self, choice):
-      recruiter = self.interaction.user
+    def points(self, choice, recruiter):
       points = 0
+      if choice in [1,2]:
+        points = 1
+      elif choice == 3:
+        points = 2
+      try:
+        self.bot.db.send_data(f"UPDATE Players SET points = points + %s WHERE id_player = %s", (points, recruiter.id))
+      except Exception as e:
+        print(f"błąd przy dodawaniu punktów, pewnie nie ma rekrutera error:\n{e}")
       
     def get_user(self, player_name):
       member_mention = "-"
@@ -164,3 +178,9 @@ class Recruitment(commands.Cog):
         roles_id.append(self.lineup_roles[1])
       roles_to_add = [discord.utils.get(member.guild.roles, id=int(role_id)) for role_id in roles_id]
       await member.add_roles(*roles_to_add, reason="Dodawanie nowych ról")
+
+    def add_to_database(self, player_id, guild_id):
+      try:
+        self.bot.db.send_data(f"INSERT INTO Players (id_player, discord_server_id, TW_points, signup_points, extra_points, recruitment_points, activity_points) VALUES (%s, %s, %s, %s, %s, %s, %s)""", (player_id, guild_id, 0, 0, 0, 0, 0))
+      except Exception as e:
+        print(f"add_to_database, error:\n{e}")

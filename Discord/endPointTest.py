@@ -8,15 +8,21 @@ data = {
     "_id": "665b944fd594e3847f2b80e9",
 }
 
-full_url = f"{url}?date=2024-06-01"
+full_url = f"{url}/2024-06-01"
 
 try:
-    response = requests.delete(full_url)
+    #response = requests.delete(full_url)
+    #response.raise_for_status()
+
+    response = requests.get(full_url)
     response.raise_for_status() 
-    #response = requests.get(url)
-    #response.raise_for_status() 
-    #data = response.json()
-    print(data)
+    data = response.json()
+    if data["signup"]:
+        response = requests.delete(full_url)
+        response.raise_for_status()
+        print("usunięto")
+    else:
+        print("nie ma takiej daty")
     #response = requests.post(url, json=data)
     #response.raise_for_status()  # Raises an HTTPError if the HTTP request returned an unsuccessful status code
     #print("Dane zostały pomyślnie wysłane")

@@ -4,6 +4,7 @@ import time
 class Pings():
   def __init__(self, bot):
     self.channel = None
+    self.bot = bot
 
     @bot.command(name="ping")
     async def ping(ctx):
@@ -67,11 +68,15 @@ class Pings():
   async def ping_to_priv(self):
     if self.players_list is None:
       return
+    if self.channel:
+      guild = self.channel.guild
+    else:
+      guild = self.ctx.guild
     #dodać do tabeli channels id z kanałami do list
     presence_channels_text = ""
-    presence_channels = self.bot.db.get_specific_value(self.ctx.guild.id, "presence_channels_id")
+    presence_channels = self.bot.db.get_specific_value(guild.id, "presence_channels_id")
     for channel in presence_channels:
-      presence_channels_text += self.bot.get_channel(int(channel)).mention + " "
+      presence_channels_text += self.bot.get_channel(int(channel)).mention + "\n"
 
     max_fields = len(self.fields)
     for i in range(2, max_fields):

@@ -1,18 +1,18 @@
-import io
 import discord
 import datetime
-from typing import Any
+import pytz
 from datetime import datetime, timezone
 from discord.ext import tasks, commands
 from Discord.presencePing import Pings
 from Discord.presenceTW import Presence
 from Discord.list import Lists
 from Discord.others import Binds, Others
-from Discord.Models import MyView, MyReset
+from Discord.Models import MyView
 from Discord.groups import CreateGroupsBtn
 from Discord.planTW import CreatePlanBtn
 from Discord.viewMenu import ViewMenu
 from Discord.database_connect import Database
+from Discord.recruitment import Recruitment
 import os
 from dotenv import load_dotenv
 import asyncio
@@ -35,6 +35,7 @@ permissions.manage_roles = True
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(intents=intents, command_prefix='>')
+        self.polish_timezone = pytz.timezone('Europe/Warsaw')
         self.wait_msg = False
         self.editing_user = {}
         with open('Discord/Keys/config.json', 'r') as file:
@@ -42,38 +43,27 @@ class MyBot(commands.Bot):
 
     async def on_ready(self):
         try:
-            #self.add_all_players()
             #self.bridge = Bridge(self)
             #self.decorator = DecoratedView(self)
             #self.add_view(self.decorator)
-            self.viewMenu = ViewMenu(self)
-            self.add_view(self.viewMenu)
             self.class_initialize()
             await self.tree.sync()
             self.loop_always.start()
-            
-            #results = self.db.get_results(f"SELECT discord_server_id, alliance_server_id FROM Alliance_Server", ( ))
-            #print(results[0][0], results[0][1])
-            #await self.presenceTW.get_apollo_list(results[1][0])
-            #await self.presenceTW.get_attendance(results[1][0], results[1][1])
+            #self.db.del_with_whitelist(887377834920788028)
+            #await self.presenceTW.get_attendance(1232957904597024882,1232957904597024882)
+            self.db.update_players_on_website(1232957904597024882)
+            #self.add_all_players()
 
-            print(f"Bot is Ready. {datetime.now().strftime('%H:%M')}")
+            print(f"Bot is Ready. {datetime.now(self.polish_timezone).strftime('%H:%M')}")
         except Exception as e:
             print(f"error {e}")
 
     async def on_message(self, message):
         await self.process_commands(message)
-        if message.author.id != self.user.id and self.wait_msg:
-            if isinstance(message.channel, discord.DMChannel):
-                try: 
-                    await self.db.user_configuration(message)
-                    self.wait_msg = True
-                    await self.wait_for("message", timeout=60, check=lambda m: m.author == message.author and m.channel == message.channel)
-                except asyncio.TimeoutError:
-                    await message.channel.send("Przekroczono czasowy limit.")
-                    self.wait_msg = False
-                    self.db.del_editing_user(self.editing_user[message.author.display_name])
-                    del self.editing_user[message.author.display_name]
+        await self.time_to_config(message)
+        if message.author.id != self.user.id:
+            await self.anime_ping(message)
+            await self.binds.verification_msg(message)
     
     async def on_guild_join(self, guild):
         self.db.one_server_verification(guild)
@@ -93,9 +83,38 @@ class MyBot(commands.Bot):
             seconds_left = int(time_left.total_seconds() % 60)
             await after.send(f"Masz przerwe na {minutes_left} min {seconds_left} sec.\nhttps://media.discordapp.net/attachments/1105633406764732426/1243121426828099635/BANhammer.gif?ex=6650528c&is=664f010c&hm=c294de1f339a4ca0ad4e73a943e92efe8defaba361330b41c22c8387060f10f5&=")
 
+    async def on_member_remove(self, member):
+        if member.guild.id == 1232957904597024882: # do poprawy
+            self.db.del_with_whitelist(member.id)
+
     @tasks.loop(seconds=60)
     async def loop_always(self):
-        self.db.keep_alive()
+        await self.db.keep_alive()
+        await self.TW_day()
+
+    async def TW_day(self):
+        day = datetime.now().strftime("%A")
+        if day in ["Tuesday", "Saturday"]:
+            time = datetime.now(self.polish_timezone).strftime("%H:%M")
+            if time in ["20:10", "20:50", "19:50"]: #wysyłą listy obecności
+                results = self.db.get_results(f"SELECT discord_server_id, alliance_server_id FROM Alliance_Server", ( ))
+                for result in results:
+                    print(result, result[0], result[1])
+                    if result and result[0] and result[1]:
+                        await self.presenceTW.get_attendance(result[0], result[1])
+                        if time in ["20:50"]:
+                            self.db.update_players_on_website(result[0])
+            if time == "20:30": # wysłanie listy na jakiś kanał
+                results = self.db.get_results(f"SELECT alliance_server_id FROM Alliance_Server", ( ))
+                for result in results:
+                    if result and result[0]:
+                        await self.list.initialize(result[0])
+            if time == "18:00":
+                results = self.db.get_results(f"SELECT discord_server_id FROM Alliance_Server", ( ))
+                for result in results:
+                    if result and result[0]:
+                        await self.presenceTW.get_apollo_list(result[0])
+                        await self.presenceTW.get_signup(result[0])
 
     async def del_msg(self, ctx):
         async for message in ctx.channel.history(limit=1):
@@ -104,21 +123,30 @@ class MyBot(commands.Bot):
     def add_all_players(self):
         serwer = self.get_guild(1232957904597024882)
         for member in serwer.members:
-            #Sprawdzanie czy taki gracz już istnieje
-            response = requests.get(self.url)
-            response.raise_for_status() 
-            data = response.json()
-            found_player = False
-            for row in data["whitelist"]: #przeszukuje całą listę
-                if str(member.id) == row["idDiscord"]:
-                    found_player = True
-                    break
-            if not found_player and not member.bot:
-                data = {
-                    "idDiscord": str(member.id)
-                }
-                response = requests.post(self.url, json=data)
-                response.raise_for_status()
+            if not member.bot:
+                #Sprawdzanie czy taki gracz już istnieje
+                '''try:
+                    rekru = Recruitment()
+                    rekru.bot = self
+                    rekru.add_to_database(member.id, serwer.id)
+                    print(f"dodałem: {member.name}")
+                except:
+                    print(f"{member.name} już jest")'''
+
+                response = requests.get(self.url)
+                response.raise_for_status() 
+                data = response.json()
+                found_player = False
+                for row in data["whitelist"]: #przeszukuje całą listę
+                    if str(member.id) == row["idDiscord"]:
+                        found_player = True
+                        break
+                if not found_player:
+                    data = {
+                        "idDiscord": str(member.id)
+                    }
+                    response = requests.post(self.url, json=data)
+                    response.raise_for_status()
 
     def class_initialize(self):
         self.db = Database(self)
@@ -129,83 +157,40 @@ class MyBot(commands.Bot):
         self.binds = Binds(self)
         self.others = Others(self)
         self.pings = Pings(self)
-        #self.myReset = MyReset()
         self.presenceTW = Presence(self)
-        self.tree.add_command(Lists(self))
+        self.list = Lists(self)
+        self.viewMenu = ViewMenu(self)
+        self.tree.add_command(self.list)
         self.tree.add_command(self.binds)
         self.add_view(self.createGroupsBtn)
         self.add_view(self.createPlanBtn)
         self.add_view(self.recruView)
+        self.add_view(self.viewMenu)
+
+    async def time_to_config(self, message):
+        if message.author.id != self.user.id and self.wait_msg:
+            if isinstance(message.channel, discord.DMChannel):
+                try: 
+                    await self.db.user_configuration(message)
+                    self.wait_msg = True
+                    await self.wait_for("message", timeout=60, check=lambda m: m.author == message.author and m.channel == message.channel)
+                except asyncio.TimeoutError:
+                    await message.channel.send("Przekroczono czasowy limit.")
+                    self.wait_msg = False
+                    self.db.del_editing_user(self.editing_user[message.author.display_name])
+                    del self.editing_user[message.author.display_name]
+
+    async def anime_ping(self, message):
+        if message.channel.id == 950694117711687732:
+            async for msg in message.channel.history(limit=1):
+                if msg.content == "@epizodyPL":
+                    for embed in msg.embeds:
+                        channelList = bot.get_channel(1130241398742974546)
+                        channelAnime = bot.get_channel(950694117711687732)
+                        async for msg in channelList.history(limit=100):
+                            if msg.content.lower() in str(embed.title).lower():
+                                await channelAnime.send(f"{msg.author.mention}")
 
 bot = MyBot()
 load_dotenv()
 bot.run(os.getenv('BOT_TOKEN'))
-
-
-'''
-@tasks.loop(seconds=60)
-async def loop_always():
-    day = datetime.now().strftime("%A")
-    if day == "Tuesday" or day == "Saturday":
-        time = datetime.now().strftime("%H:%M")
-        if time in ["19:10", "19:50", "18:50"]: 
-            print("Lista TW")
-            server = bot.get_guild(1100724285246558208)
-            sheet = Excel(bot)
-            players_list = await sheet.get_name_from_server(server)
-            await sheet.connect_with_excel(players_list, "TW")
-            del sheet
-        if time == "19:30": 
-            results = self.db.get_results(f"SELECT alliance_server_id FROM Alliance_Server", ( ))
-            for result in results:
-                if result[0]:
-                    print(result[0])
-                    await self.list.initialize(result[0])
-        if time == "18:00":
-            print("apollo")
-            sheet = Excel(bot)
-            await sheet.get_apollo_list()
-            del sheet
-
-@bot.event
-async def on_message(message):
-    if message.author.id != 1002261855718342759: #id bota aby sam siebie nie pingował
-        global binds
-        await bot.process_commands(message)
-        await binds.verification_msg(message)
-        if message.channel.id == 950694117711687732 and message.author.id != bot.user.id:
-            async for msg in message.channel.history(limit=1):
-                if msg.content == "@epizodyPL":
-                    for embed in msg.embeds:
-                        await GetList(embed.title)
-
-@bot.command()
-async def list_TW(ctx):
-    excel = Excel(bot)
-    players_list = await excel.get_name_from_server(ctx.guild)
-    await excel.del_msg(ctx)
-    await excel.connect_with_excel(players_list, "TW")
-    del excel
-
-@bot.command()
-async def list_adt(ctx):
-    try:
-        excel = Excel(bot)
-        await excel.get_apollo_list()
-        await excel.del_msg(ctx)
-        del excel
-    except:
-        await ctx.send("ups... coś poszło nie tak 'error: get_apollo_list")
-    
-@bot.command()
-async def reset_TW(ctx):
-    global myReset
-    await ctx.send("Przycisk do czyszczenia tabel na TW, używaj go z głową!!", view=myReset)
-
-async def GetList(animeName):
-    channelList = bot.get_channel(1130241398742974546)
-    channelAnime = bot.get_channel(950694117711687732)
-    async for message in channelList.history(limit=100):
-        if message.content == animeName:
-            await channelAnime.send(f"<@{message.author.id}> ")
-            '''

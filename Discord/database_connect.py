@@ -2,6 +2,7 @@ import mysql.connector
 import discord
 import json
 import asyncio
+import requests
 
 class Database():
   def __init__(self, bot) -> None:
@@ -14,26 +15,28 @@ class Database():
     #przenieś do json
     self.conf_field = {
       1:("ID podstawowych ról (podajemy po przecinku)", "basic_roles"),
-      2:("ID roli rekrutera", "recruiter_id"),
-      3:("ID ról lineup'ów (podajemy po przecinku)", "lineup_roles"),
-      4:("ID roli oficerów (od tej roli w góre)", "officer_id"),
+      2:("ID ról lineup'ów (podajemy po przecinku)", "lineup_roles"),
+      3:("ID roli do obsługi bota", "officer_id"),
+      4:("ID ról na stronke(pierwszy dostaje ekstra punkty za TW)","extra_role_id"),
       5:("ID głównego kanału", "main_id"),
       6:("ID głównego kanału na logi", "general_logs_id"),
       7:("ID kanału na logi rekruterów", "recruiter_logs_id"),
       8:("ID kanałów z obecnością (podajemy po przecinku)","presence_channels_id"),
-      9:("ID serwera na TW", "alliance_server_id"),
-      10:("ID ról na TW (jako pierwszą role podaj swoją)", "roles"),
+      9:("ID kanału do wyświetlania obecnośći z TW","attendance_list_from_TW"),
+      10:("ID serwera na TW", "alliance_server_id"),
+      11:("ID ról na TW (jako pierwszą role podaj swoją)", "roles"),
       }
     #inaczej połączyć z powyżej
     self.tables = {
       "basic_roles": "Roles",
-      "recruiter_id": "Roles",
+      "extra_role_id": "Roles",
       "lineup_roles": "Roles",
       "officer_id": "Roles",
       "main_id": "Channels",
       "general_logs_id": "Channels",
       "recruiter_logs_id": "Channels",
       "presence_channels_id": "Channels",
+      "attendance_list_from_TW": "Channels",
       "alliance_server_id": "Alliance_Server",
       "roles": "Alliance_Server"
     }
@@ -69,7 +72,7 @@ class Database():
     except Exception as e:
       print(e)
 
-  def keep_alive(self):
+  async def keep_alive(self):
     try:
         self.mydb.ping(reconnect=True, attempts=3, delay=5)
     except mysql.connector.Error as err:
@@ -213,7 +216,7 @@ class Database():
           if self.tables[column_name] in ["Roles"]:
             return guild.get_role(results).name
           elif self.tables[column_name] in ["Channels"]:
-            return guild.get_channel(results).name
+            return guild.get_channel_or_thread(results).name
           elif column_name in ["alliance_server_id"]:
             return guild.name
           return results
@@ -226,7 +229,7 @@ class Database():
             if self.tables[column_name] in ["Roles"]:
               new_result.append(guild.get_role(result).name)
             elif self.tables[column_name] in ["Channels"]:
-              new_result.append(guild.get_channel(result).name)
+              new_result.append(guild.get_channel_or_thread(result).name)
             elif column_name in ["roles"]:
               new_result.append(guild.get_role(result).name)
           except:
@@ -234,3 +237,53 @@ class Database():
         return new_result
     else:
         return results
+    
+  def points(self, points, player_id, type_points):
+    try:
+      self.send_data(f"UPDATE Players SET {type_points} = {type_points} + %s WHERE id_player = %s", (points, player_id))
+    except Exception as e:
+      print(f"błąd przy dodawaniu punktów, pewnie nie ma gracza error:\n{e}")
+
+  def update_players_on_website(self, guild_id):
+    try:
+      with open('Discord/Keys/config.json', 'r') as file:
+          url = json.load(file)["kop_users"]
+      guild = self.bot.get_guild(guild_id)
+      result = self.get_results("SELECT id_player, TW_points, signup_points, recruitment_points, activity_points FROM Players WHERE discord_server_id = %s", (guild_id,))
+      TW_role = self.get_specific_value(guild_id, "extra_role_id")
+      for player_id, TW_points, signup_points, recruitment_points, activity_points in result:
+        player = guild.get_member(player_id)
+        if player:
+          avatar = ""
+          if player.avatar:
+            avatar = str(player.avatar.url)
+          role_name = [role.name for role in player.roles if role.name != "@everyone" and str(role.id) in TW_role]
+          if role_name:
+            role_name = role_name[-1]
+            data ={
+              "idDiscord": str(player_id),   
+              "role": role_name,
+              "TW_points": TW_points,
+              "signup_points": signup_points,
+              "recruitment_points": recruitment_points,
+              "activity_points": activity_points,
+              "image": avatar
+            }
+            print(data)
+            #delete_response  = requests.delete(f"{url}/{data['date']}")
+            #delete_response.raise_for_status()
+
+            #response  = requests.post(url, json=data)
+            #response.raise_for_status()
+            #print("ok")
+    except Exception as e:
+      print(e)
+
+  def del_with_whitelist(self, member_id):
+    with open('Discord/Keys/config.json', 'r') as file:
+      url = json.load(file)["kop_whitelist"]
+    full_url = f"{url}?id={member_id}"
+    print(full_url)
+    response = requests.delete(full_url)
+    response.raise_for_status()
+    print("usunięto gracza")

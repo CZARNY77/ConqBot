@@ -8,14 +8,15 @@ class Lists(app_commands.Group):
 
     def set_parameters(self, guild_id):
         self.house_roles = self.bot.db.get_specific_value(guild_id, "roles")
-        logs = self.bot.db.get_specific_value(guild_id, "general_logs_id")
-        self.TW_list_channel = self.bot.get_channel(logs)
+        logs = self.bot.db.get_specific_value(guild_id, "attendance_list_from_TW")
         self.guild = self.bot.get_guild(guild_id)
+        if self.guild:
+            self.TW_list_channel = self.guild.get_channel_or_thread(logs)
         
 
     async def initialize(self, guild_id):
         self.set_parameters(guild_id)
-        if self.guild == None and self.TW_list_channel == None:
+        if self.guild == None or self.TW_list_channel == None:
             return
         house_player_list = []
         sum_players = 0

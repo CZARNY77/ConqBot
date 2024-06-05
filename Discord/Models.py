@@ -19,7 +19,7 @@ class MyView(discord.ui.View):
     @discord.ui.button(label="Usuń Gracza", custom_id="button-2", style=discord.ButtonStyle.danger , emoji="💀")
     async def button_del_player(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.client.db.check_role_permissions(interaction.user, interaction.guild_id):# or interaction.user.id == 373563828513931266:
-            await interaction.response.send_modal(MyModelDelPlayer(interaction))
+            await interaction.response.send_modal(FormDelPlayer(interaction))
             return
         else:
             await interaction.response.send_message('Nie masz uprawnień!!', ephemeral=True)
@@ -82,7 +82,7 @@ class Form2(FormAddPlayer):
         await recruitment.add_player_to_whitelist(self.name, self.choice, in_house=self.in_house, recru_process=self.recru_process, comment=self.comment)
         del recruitment
 
-class MyModelDelPlayer(FormAddPlayer):
+class FormDelPlayer(FormAddPlayer):
     def __init__(self, interaction):
         super().__init__(title='Formularz', interaction=interaction)
         self.add_item(self.comment)
@@ -92,22 +92,3 @@ class MyModelDelPlayer(FormAddPlayer):
         recruitment = Recruitment(self.interaction)
         await recruitment.del_player_to_whitelist(self.name, self.comment)
         del recruitment
-
-class MyReset(discord.ui.View):
-    def __init__(self) -> None:
-        super().__init__(timeout = None)
-
-    @discord.ui.button(label="Wyczyść tabele", custom_id="button-3", style=discord.ButtonStyle.primary)
-    async def button_reset_TW(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message('wybierz lineup!! (**UWAGA** wybranie odrazu czyści !!!)', ephemeral=True, view=MySelect())
-
-class MySelect(discord.ui.View):
-    select_options = None
-    
-    @discord.ui.select(placeholder = "Który lineup", options=select_options)
-    async def select_reset_TW(self, interaction: discord.Interaction, select_item: discord.ui.Select):
-        try:
-            await interaction.response.send_message('Czyszczenie...', ephemeral=True)
-            await interaction.edit_original_response(content='Czyszczenie wykonane!!!')
-        except:
-            await interaction.response.send_message('coś poszło nie tak!!', ephemeral=True)
