@@ -16,6 +16,10 @@ class MyView(discord.ui.View):
     async def button_add_player(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message('Wybierz w jaki sposób przeprowadzasz rekrutacje', ephemeral=True, view=MyRecruSelect())
 
+    @discord.ui.button(label="Szybka rekrutacja", custom_id="button-3", style=discord.ButtonStyle.success, emoji="🏍")
+    async def button_add_quickly(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(FormAddQuickly(interaction))
+
     @discord.ui.button(label="Usuń Gracza", custom_id="button-2", style=discord.ButtonStyle.danger , emoji="💀")
     async def button_del_player(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.client.db.check_role_permissions(interaction.user, interaction.guild_id):# or interaction.user.id == 373563828513931266:
@@ -29,8 +33,9 @@ class MyRecruSelect(discord.ui.View):
     select_options = [discord.SelectOption(label="Cala rekrutacja", value=3), 
                       discord.SelectOption(label="Wbił na discorda (1 etap)", value=1),
                       discord.SelectOption(label="Przeprowadzona rozmowa rekrutacyjna (2 etap)", value=2)]
+    discord.SelectMenu
     @discord.ui.select(placeholder = "Sposób Rekcutacji", options=select_options)
-    async def select_reset_TW(self, interaction: discord.Interaction, select_item: discord.ui.Select):
+    async def recru_select(self, interaction: discord.Interaction, select_item: discord.ui.Select):
         try:
             choice = int(select_item.values[0])
             if choice == 1:
@@ -63,7 +68,7 @@ class Form1(FormAddPlayer):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.send_message(f'Formularz został wysłany. Na {interaction.guild.get_channel(self.recru_channel_log_id).mention} zobacz podsumowanie.', ephemeral=True)
-        recruitment = Recruitment(self.interaction)
+        recruitment = Recruitment(self.interaction, self.recru_channel_log_id)
         await recruitment.add_player_to_whitelist(self.name, self.choice, comment=self.comment, request=self.request)
         del recruitment
 
@@ -89,6 +94,17 @@ class FormDelPlayer(FormAddPlayer):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.send_message(f'Formularz został wysłany. Na {interaction.guild.get_channel(self.recru_channel_log_id).mention} zobacz podsumowanie.', ephemeral=True)
-        recruitment = Recruitment(self.interaction)
+        recruitment = Recruitment(self.interaction, self.recru_channel_log_id)
         await recruitment.del_player_to_whitelist(self.name, self.comment)
+        del recruitment
+
+class FormAddQuickly(FormAddPlayer):
+    def __init__(self, interaction):
+        super().__init__(title='Formularz', interaction=interaction)
+        self.add_item(self.comment)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.send_message(f'Formularz został wysłany. Na {interaction.guild.get_channel(self.recru_channel_log_id).mention} zobacz podsumowanie.', ephemeral=True)
+        recruitment = Recruitment(self.interaction, self.recru_channel_log_id)
+        await recruitment.add_quickly(self.name, comment=self.comment)
         del recruitment

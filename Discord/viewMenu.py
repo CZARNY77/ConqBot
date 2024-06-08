@@ -69,6 +69,13 @@ class ViewMenu(discord.ui.View):
         else:
             await interaction.response.send_message(content=f"Nie masz uprawnień!", ephemeral=True)
 
+    @discord.ui.button(label="Przypomnij o ankietach", custom_id="btn-presence-2", style=discord.ButtonStyle.gray, row=3)
+    async def button_checking_surveys(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.bot.db.check_role_permissions(interaction.user, interaction.guild_id):
+            await self.survey(interaction)
+        else:
+            await interaction.response.send_message(content=f"Nie masz uprawnień!", ephemeral=True)
+
     settingsEmoji = discord.PartialEmoji(name="Settings", id=1247272714788409354)
     @discord.ui.button(custom_id="btn-config-1", style=discord.ButtonStyle.red, row=4, emoji=settingsEmoji)
     async def button_config(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -114,6 +121,14 @@ class ViewMenu(discord.ui.View):
         try:
             await self.bot.presenceTW.get_apollo_list(interaction.guild_id)
             await interaction.response.send_message(content=f"Wysyłanie zakończone.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(content=f"Coś poszło nie tak!\nerror: {e}", ephemeral=True)
+
+    async def survey(self, interaction):
+        try:
+            results = self.bot.db.get_specific_value(interaction.guild_id, "basic_roles")
+            await interaction.response.send_message(content=f"Sprawdzanie rozpoczęte.", ephemeral=True)
+            await self.bot.presenceTW.checking_surveys(interaction.guild, results[0], interaction.user)
         except Exception as e:
             await interaction.response.send_message(content=f"Coś poszło nie tak!\nerror: {e}", ephemeral=True)
 

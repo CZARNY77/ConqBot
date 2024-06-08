@@ -14,7 +14,7 @@ class Database():
     self.edited_guild = {}
     #przenieś do json
     self.conf_field = {
-      1:("ID podstawowych ról (podajemy po przecinku)", "basic_roles"),
+      1:("ID podstawowych ról (podajemy po przecinku, pierwsza jest główna rola)", "basic_roles"),
       2:("ID ról lineup'ów (podajemy po przecinku)", "lineup_roles"),
       3:("ID roli do obsługi bota", "officer_id"),
       4:("ID ról na stronke(pierwszy dostaje ekstra punkty za TW)","extra_role_id"),
@@ -94,9 +94,9 @@ class Database():
       tables_and_columns[table_name] = column_details 
     return tables_and_columns
 
-  def add_new_guild(self, id, nazwa): #dodanie nowego serwera do bazydanych
+  def add_new_guild(self, id, name): #dodanie nowego serwera do bazydanych
     sql = "INSERT INTO Discord_Servers (ID, name) VALUES (%s, %s)"
-    val = (id, nazwa)
+    val = (id, name)
     self.cursor.execute(sql, val)
     self.mydb.commit()
     print("dodałem")

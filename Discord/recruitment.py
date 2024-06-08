@@ -106,16 +106,18 @@ class Recruitment(commands.Cog):
                 content = f"{self.interaction.user.mention}, {member_mention.mention} nie dostał wiadomości priv, najprawdopodobniej blokuje"
               await self.create_embed(5, player_name, member_mention, comment, content=content)
             else:
-              await self.create_embed(4, player_name, member_mention)
+              await self.create_embed(4, player_name, member_mention, comment)
         except Exception as error:
             await self.create_embed(0, player_name, member_mention, error=error)
 
-    async def create_embed(self, selection, player_name, member_mention, comment=None, in_house=None, recru_process=None, request=None, error=None, content=None):
+    async def create_embed(self, selection, player_name, member, comment=None, in_house=None, recru_process=None, request=None, error=None, content=None):
       ping = content
-
+      member_mention = "-"
+      if member != "-":
+        member_mention = member.mention
       embed = discord.Embed(
           title=f'Gracz: {player_name}',
-          description=f"DC: {member_mention.mention}",
+          description=f"DC: {member_mention}",
           color=self.embed_color
         )
       if selection == 1: # rekruter dodaje tylko na dc
@@ -140,23 +142,12 @@ class Recruitment(commands.Cog):
 
       embed.add_field(name="Komentarz:", value=comment, inline=False)
       image_url = "https://cdn.discordapp.com/attachments/1105633406764732426/1242415582922412112/Unknown_knight_4.PNG?ex=664dc12d&is=664c6fad&hm=3b6deabaa66da5e337508f1b518bdcb97c518de217cca96e88b45f516acd294a&"
-      if type(member_mention) != str:
-         image_url = member_mention.avatar
+      if type(member) != str:
+         image_url = member.avatar
       embed.set_thumbnail(url=image_url)
       embed.set_author(name=self.interaction.user.global_name, icon_url=self.interaction.user.avatar)
 
       await self.log_channel.send(content = ping,embed=embed)
-
-    def points(self, choice, recruiter):
-      points = 0
-      if choice in [1,2]:
-        points = 1
-      elif choice == 3:
-        points = 2
-      try:
-        self.bot.db.send_data(f"UPDATE Players SET points = points + %s WHERE id_player = %s", (points, recruiter.id))
-      except Exception as e:
-        print(f"błąd przy dodawaniu punktów, pewnie nie ma rekrutera error:\n{e}")
       
     def get_user(self, player_name):
       member_mention = "-"
@@ -183,4 +174,28 @@ class Recruitment(commands.Cog):
       try:
         self.bot.db.send_data(f"INSERT INTO Players (id_player, discord_server_id, TW_points, signup_points, extra_points, recruitment_points, activity_points) VALUES (%s, %s, %s, %s, %s, %s, %s)""", (player_id, guild_id, 0, 0, 0, 0, 0))
       except Exception as e:
-        print(f"add_to_database, error:\n{e}")
+        print(f"add_to_database, error: {e}")
+
+    async def add_quickly(self, player_name, comment):
+      member_mention = self.get_user(player_name)
+      if member_mention == "-":
+        await self.create_embed(4, player_name, member_mention, comment)
+        return
+      self.add_to_database(member_mention.id, self.interaction.guild_id)
+      response = requests.get(self.url)
+      response.raise_for_status() 
+      data = response.json()
+      found_player = False
+      for row in data["whitelist"]: #przeszukuje całą listę
+        if str(member_mention.id) == row["idDiscord"]:
+          found_player = True
+          await self.create_embed(3, player_name, member_mention, comment)
+          break
+      if not found_player:
+        data = {
+            "idDiscord": str(member_mention.id)
+        }
+        response = requests.post(self.url, json=data)
+        response.raise_for_status()
+        content = f"Szybka rekrutacja"
+        await self.create_embed(2, player_name, member_mention, content=content, comment=comment)

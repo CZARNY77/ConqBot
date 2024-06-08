@@ -1,8 +1,9 @@
 import json
 from discord.ext import commands
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
 import re
+import time
 
 class Presence(commands.Cog):
     def __init__(self, bot):
@@ -41,7 +42,6 @@ class Presence(commands.Cog):
         try:
             delete_response  = requests.delete(f"{self.url}/{data['date']}")
             delete_response.raise_for_status()
-
             response  = requests.post(self.url, json=data)
             response.raise_for_status()
             players_list.clear()
@@ -77,14 +77,14 @@ class Presence(commands.Cog):
         presence_players_list = await self.get_players(guildTW, roleTW_id)
         if presence_players_list:
             record = self.bot.db.get_results("SELECT player_list FROM TW WHERE discord_server_id = %s AND date = %s", (guild_id, date))
-            '''if record:
+            if record:
                 existing_player_list = json.loads(record[0][0])
                 combined_player_list = list(set(existing_player_list + presence_players_list))
                 presence_players_list = list(set(presence_players_list) - set(existing_player_list))
                 self.bot.db.send_data(f"UPDATE TW SET player_list = %s WHERE discord_server_id = %s AND date = %s", (json.dumps(combined_player_list), guild_id, date))
             else:
                 self.bot.db.send_data(f"INSERT INTO TW (discord_server_id, date, player_list) VALUES (%s, %s, %s)", (guild_id, date, json.dumps(presence_players_list)))
-            '''
+            
             for player_id in presence_players_list:
                 player = self.bot.get_guild(guild_id).get_member(int(player_id))
                 extra_role = self.bot.db.get_specific_value(guild_id, "extra_role_id")[0]
@@ -93,8 +93,7 @@ class Presence(commands.Cog):
                 points = self.points_from_TW
                 if role_names: 
                     points = self.points_from_TW + self.points_extra
-                print(points)
-                #self.bot.db.points(points, int(player_id), "TW_points")
+                self.bot.db.points(points, int(player_id), "TW_points")
 
     async def get_players(self, guild, role_id):
         players_list = []
@@ -128,6 +127,42 @@ class Presence(commands.Cog):
                                         else:
                                             self.bot.db.points(self.points_signup, p_list.id, "signup_points")
                                         break
+
+    def get_server_players(self, guild, role_id):
+        players_list = []
+        for member in guild.members:
+            for role in member.roles:
+                if role.id == role_id:
+                    players_list.append(member.id)
+        return players_list
+
+    async def checking_surveys(self, guild, role_id, msg_author):
+        #pobrać role membera z bazy
+        players_id = self.get_server_players(guild, int(role_id))
+        with open('Discord/Keys/config.json', 'r') as file:
+          survey_url = json.load(file)["kop_survey"]
+        response = requests.get(survey_url)
+        response.raise_for_status() 
+        data = response.json()
+        for row in data["surveys"]: #przeszukuje całą listę
+            discord_id = int(row["discordId"])
+            if discord_id in players_id:
+                players_id.remove(discord_id)
+
+        await msg_author.send(f"Ilość wiadomości do wysłania {len(players_id)}, przywidywany czas {len(players_id)*10} sec")
+        error_player_list = ""
+        error_count = 0
+
+        for player_id in players_id:
+            player = guild.get_member(player_id)
+            try:
+                await player.send(f"**Proszę o nie blokowanie tego bota, bo jak za duzo osób zablokuje może chycić BANA**\nSiemanko, przypominam o wypełnieniu ankiety https://cb-social.vercel.app/ \nW razie porblemów proszę pisać do Strijder albo CZARNEGO")
+            except:
+                error_count += 1
+                error_player_list += f"{player.mention} "
+            time.sleep(10)
+        await msg_author.send(f"Wysyłanie zakończone, wiadomośc nie dotarła do {error_count}: {error_player_list}")
+
 
     async def del_msg(self, ctx):
         async for message in ctx.channel.history(limit=1):

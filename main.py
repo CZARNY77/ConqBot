@@ -43,6 +43,10 @@ class MyBot(commands.Bot):
 
     async def on_ready(self):
         try:
+            '''for member in self.get_guild(1232957904597024882).members:
+                role_name = [role.name for role in member.roles if role.id == 1236647699831586838]
+                if not member.bot and role_name:
+                    print(member.display_name)'''
             #self.bridge = Bridge(self)
             #self.decorator = DecoratedView(self)
             #self.add_view(self.decorator)
@@ -51,7 +55,7 @@ class MyBot(commands.Bot):
             self.loop_always.start()
             #self.db.del_with_whitelist(887377834920788028)
             #await self.presenceTW.get_attendance(1232957904597024882,1232957904597024882)
-            self.db.update_players_on_website(1232957904597024882)
+            #self.db.update_players_on_website(1232957904597024882)
             #self.add_all_players()
 
             print(f"Bot is Ready. {datetime.now(self.polish_timezone).strftime('%H:%M')}")
@@ -123,7 +127,9 @@ class MyBot(commands.Bot):
     def add_all_players(self):
         serwer = self.get_guild(1232957904597024882)
         for member in serwer.members:
-            if not member.bot:
+            role_name = [role.name for role in member.roles if role.id == 1236647699831586838]
+
+            if not member.bot and role_name:
                 #Sprawdzanie czy taki gracz już istnieje
                 '''try:
                     rekru = Recruitment()
@@ -132,7 +138,6 @@ class MyBot(commands.Bot):
                     print(f"dodałem: {member.name}")
                 except:
                     print(f"{member.name} już jest")'''
-
                 response = requests.get(self.url)
                 response.raise_for_status() 
                 data = response.json()
@@ -142,6 +147,7 @@ class MyBot(commands.Bot):
                         found_player = True
                         break
                 if not found_player:
+                    print(member.display_name)
                     data = {
                         "idDiscord": str(member.id)
                     }
