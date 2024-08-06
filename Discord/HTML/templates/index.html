@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Konqueruś</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('index') }}">| Ogólne |</a>
+        <a href="{{ url_for('tw_points') }}">| Punkty za TW |</a>
+        <a href="{{ url_for('tw') }}">| TW |</a>
+    </nav>
+    <h1>Kingdom of Poland</h1>
+    <h3>{{ count }} graczy</h3>
+<table id="data-table">
+    <thead>
+        <tr>
+            <th data-column="id">ID</th>
+            <th data-column="name">Name</th>
+            <th data-column="points">Points</th>
+            <th data-column="tw_points">TW Points %</th>
+            <th data-column="lineup">Lineup</th>
+            <th data-column="lineup">House</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in users %}
+        <tr>
+            <td>{{ user[0] }}</td>
+            <td>{{ user[1] }}</td>
+            <td>{{ user[2] }}</td>
+            <td>{{ user[3] }}</td>
+            <td>{{ user[4] }}</td>
+            <td>{{ user[5] }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+    
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const table = document.querySelector('#data-table');
+        const headers = table.querySelectorAll('th');
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+
+        headers.forEach(header => {
+            header.addEventListener('click', () => {
+                const column = header.getAttribute('data-column');
+                const isAscending = header.classList.toggle('sorted-asc');
+                header.classList.toggle('sorted-desc', !isAscending);
+
+                const index = Array.from(header.parentElement.children).indexOf(header);
+                rows.sort((rowA, rowB) => {
+                    const cellA = rowA.children[index].textContent.trim();
+                    const cellB = rowB.children[index].textContent.trim();
+
+                    if (!isNaN(cellA) && !isNaN(cellB)) {
+                        return (parseFloat(cellA) - parseFloat(cellB)) * (isAscending ? 1 : -1);
+                    }
+                    return cellA.localeCompare(cellB) * (isAscending ? 1 : -1);
+                });
+
+                rows.forEach(row => table.querySelector('tbody').appendChild(row));
+            });
+        });
+    });
+</script> 
+   
+<h1>Nie ma ich w bazie</h1>
+<h3>{{ not_verified_count }} graczy</h3>
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in not_verified %}
+        <tr>
+            <td>{{ user[0] }}</td>
+            <td>{{ user[1] }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+        
+<h1>Inni Gracze</h1>
+<h3>{{ others_count }} graczy</h3>
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in others_player %}
+        <tr>
+            <td>{{ user[0] }}</td>
+            <td>{{ user[1] }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</body>
+</html>

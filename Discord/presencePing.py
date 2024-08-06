@@ -44,7 +44,7 @@ class Pings():
       players = self.fields[i].value[4:].splitlines()
       if len(players) > 0 and players is not None:
         await self.get_player_name(players)
-    await self.create_msg_to_send(self.players_list)
+    await self.create_msg_to_send(self.players_list, "")
 
   async def ping_tentative(self):
     if self.players_list is None:
@@ -63,7 +63,7 @@ class Pings():
                   ping_players.append(p_list)
                   break
 
-    await self.create_msg_to_send(ping_players)
+    await self.create_msg_to_send(ping_players, "Proszę się określić.\n")
 
   async def ping_to_priv(self):
     if self.players_list is None:
@@ -115,11 +115,13 @@ class Pings():
       guild = self.channel.guild
     else:
       guild = self.ctx.guild
+    vacation_id = self.bot.db.get_specific_value(guild.id, "vacation_id")
     players_list = []
     for member in guild.members:
-      for role in member.roles:
-        if f"<@&{role.id}>" == self.role:
-          players_list.append(member)
+        if not any(role.id == vacation_id for role in member.roles):
+          for role in member.roles:
+            if f"<@&{role.id}>" == self.role:
+              players_list.append(member)
     if len(players_list) > 0:
       return players_list
     else:
@@ -135,12 +137,12 @@ class Pings():
             self.players_list.remove(p_list)
             break
         
-  async def create_msg_to_send(self, list):
+  async def create_msg_to_send(self, list, content):
     if self.channel:
       send_channel = self.channel
     else:
       send_channel = self.ctx.channel
-    msg_to_send = ""
+    msg_to_send = content
     count = 0
     for player in list:
       count += 1

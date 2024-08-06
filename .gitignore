@@ -1,2 +1,5 @@
 Discord/Keys/
 .env
+Tests
+main_test.py
+Discord/planTW.py

@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands
 from discord import ChannelType
 import io
+import random
 
 class Binds(app_commands.Group):
     def __init__(self, bot):
@@ -10,6 +11,7 @@ class Binds(app_commands.Group):
         self.bot = bot
         self.DiesMeda = bot.get_guild(1100724285246558208)
         self.binds_channel = bot.get_channel(1179153163622813747) # database channel
+        self.screens_channel = bot.get_channel(1182605597120675850)
 
     async def verification_msg(self, message):
         try:
@@ -104,7 +106,26 @@ class Binds(app_commands.Group):
         except:
             await ctx.response.send_message(content=f"Ups.. Coś poszło nie tak", ephemeral=True)
 
-
+    async def call_to_screen(self, message):
+        try:
+            if message.content == "<:pepe_telefon:1252356997383327767>":
+                screens_list = [msg async for msg in self.screens_channel.history(limit=100)]
+                if screens_list:
+                    rand = random.randrange(0, len(screens_list))
+                    bind = screens_list[rand]
+                    if bind.attachments:
+                        attachment = bind.attachments[0]
+                        file_content = await attachment.read()
+                        file = discord.File(io.BytesIO(file_content), filename=attachment.filename)
+                        await message.channel.send(file=file)
+        except Exception as e:
+            print(f"Bindy error:\n{e}")
+            
+    async def rageping_emoji(self, message):
+        if not message.author.bot and message.reference is None and message.mentions:
+            main_channel_id = self.bot.db.get_specific_value(message.guild.id, "main_id")
+            if main_channel_id == message.channel.id:
+                await message.channel.send('<a:rageping:1251268488031371435>')
 
 #-------------------------------------------------------------------------------
 
@@ -118,9 +139,9 @@ class Others(commands.Cog):
             await self.warthog(ctx, member)
     
     async def warthog(self, ctx, member):
-        if member.id == 373563828513931266:
+        if member.id in [373563828513931266, 481981920398540830]:
             await ctx.response.send_message(content=f"Chciałbyś!!!", ephemeral=True)
-            await member.send(f"{ctx.user} próbowam użyć warthog'a na tobie!")
+            await member.send(f"{ctx.user} próbował użyć warthog'a na tobie!")
             member = ctx.user
             await member.send("https://cdn.discordapp.com/attachments/1140638404795695134/114063847723c22a88a969d7d37a330ef10f31645857.gif")
         else:

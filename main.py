@@ -1,6 +1,8 @@
 import discord
 import datetime
 import pytz
+import io
+import asyncio
 from datetime import datetime, timezone
 from discord.ext import tasks, commands
 from Discord.presencePing import Pings
@@ -8,24 +10,21 @@ from Discord.presenceTW import Presence
 from Discord.list import Lists
 from Discord.others import Binds, Others
 from Discord.Models import MyView
-from Discord.groups import CreateGroupsBtn
-from Discord.planTW import CreatePlanBtn
-from Discord.viewMenu import ViewMenu
+from Discord.groups import CreateGroupsBtn, EditGroupBtn
+from Discord.viewMenu import ViewMenu, ViewMenu2
+from Discord.viewMenuEng import ViewMenuEng
 from Discord.database_connect import Database
-from Discord.recruitment import Recruitment
-import os
+import subprocess
 from dotenv import load_dotenv
-import asyncio
-import requests
+import os
 import json
-from Discord.programming_patterns.Bridge import Bridge
-from Discord.programming_patterns.Decorator import DecoratedView
 
 
 intents = discord.Intents.all()
 intents.message_content = True
 intents.messages = True
 intents.members = True
+intents.voice_states = True
 
 permissions = discord.Permissions.all()
 permissions.read_message_history = True
@@ -38,26 +37,13 @@ class MyBot(commands.Bot):
         self.polish_timezone = pytz.timezone('Europe/Warsaw')
         self.wait_msg = False
         self.editing_user = {}
-        with open('Discord/Keys/config.json', 'r') as file:
-            self.url = json.load(file)["kop_whitelist"]
 
     async def on_ready(self):
         try:
-            '''for member in self.get_guild(1232957904597024882).members:
-                role_name = [role.name for role in member.roles if role.id == 1236647699831586838]
-                if not member.bot and role_name:
-                    print(member.display_name)'''
-            #self.bridge = Bridge(self)
-            #self.decorator = DecoratedView(self)
-            #self.add_view(self.decorator)
             self.class_initialize()
+            await self.update_data()
             await self.tree.sync()
             self.loop_always.start()
-            #self.db.del_with_whitelist(887377834920788028)
-            #await self.presenceTW.get_attendance(1232957904597024882,1232957904597024882)
-            #self.db.update_players_on_website(1232957904597024882)
-            #self.add_all_players()
-
             print(f"Bot is Ready. {datetime.now(self.polish_timezone).strftime('%H:%M')}")
         except Exception as e:
             print(f"error {e}")
@@ -65,9 +51,11 @@ class MyBot(commands.Bot):
     async def on_message(self, message):
         await self.process_commands(message)
         await self.time_to_config(message)
+        await self.szpieg(message)
         if message.author.id != self.user.id:
             await self.anime_ping(message)
-            await self.binds.verification_msg(message)
+            #await self.binds.verification_msg(message)
+            await self.binds.call_to_screen(message)
     
     async def on_guild_join(self, guild):
         self.db.one_server_verification(guild)
@@ -88,90 +76,77 @@ class MyBot(commands.Bot):
             await after.send(f"Masz przerwe na {minutes_left} min {seconds_left} sec.\nhttps://media.discordapp.net/attachments/1105633406764732426/1243121426828099635/BANhammer.gif?ex=6650528c&is=664f010c&hm=c294de1f339a4ca0ad4e73a943e92efe8defaba361330b41c22c8387060f10f5&=")
 
     async def on_member_remove(self, member):
-        if member.guild.id == 1232957904597024882: # do poprawy
+        if member.guild.id in [1232957904597024882, 1105196730414272562]: # do poprawy
             self.db.del_with_whitelist(member.id)
-
+    
     @tasks.loop(seconds=60)
     async def loop_always(self):
         await self.db.keep_alive()
         await self.TW_day()
+        await self.training_day()
 
     async def TW_day(self):
         day = datetime.now().strftime("%A")
-        if day in ["Tuesday", "Saturday"]:
+        if day == "Tuesday" or day == "Saturday":
             time = datetime.now(self.polish_timezone).strftime("%H:%M")
-            if time in ["20:10", "20:50", "19:50"]: #wysyłą listy obecności
+            if time in ["20:10", "20:50", "19:50"]: #wysyła listy obecności
                 results = self.db.get_results(f"SELECT discord_server_id, alliance_server_id FROM Alliance_Server", ( ))
                 for result in results:
-                    print(result, result[0], result[1])
                     if result and result[0] and result[1]:
                         await self.presenceTW.get_attendance(result[0], result[1])
                         if time in ["20:50"]:
-                            self.db.update_players_on_website(result[0])
+                            self.db.update_players_on_website(result[0]) 
             if time == "20:30": # wysłanie listy na jakiś kanał
+                print("lista obecności")
                 results = self.db.get_results(f"SELECT alliance_server_id FROM Alliance_Server", ( ))
                 for result in results:
                     if result and result[0]:
                         await self.list.initialize(result[0])
-            if time == "18:00":
+            if time == "19:00":
                 results = self.db.get_results(f"SELECT discord_server_id FROM Alliance_Server", ( ))
                 for result in results:
                     if result and result[0]:
-                        await self.presenceTW.get_apollo_list(result[0])
                         await self.presenceTW.get_signup(result[0])
 
+    async def training_day(self):
+        day = datetime.now().strftime("%A")
+        if day in ["Monday"]:
+            time = datetime.now(self.polish_timezone).strftime("%H:%M")
+            if time in ["20:00"]:
+                results = self.db.get_results(f"SELECT discord_server_id, training_channel_id FROM Channels", ( ))
+                for result in results:
+                    if result and result[0] and result[1]:
+                        channel = self.get_guild(result[0]).get_channel(result[1])
+                        if channel:
+                            await self.createGroupsBtn.clear_history(channel)
+                        else:
+                            print("Nie znaleziono kanału od treningu")
+                        
     async def del_msg(self, ctx):
         async for message in ctx.channel.history(limit=1):
             await message.delete()
-
-    def add_all_players(self):
-        serwer = self.get_guild(1232957904597024882)
-        for member in serwer.members:
-            role_name = [role.name for role in member.roles if role.id == 1236647699831586838]
-
-            if not member.bot and role_name:
-                #Sprawdzanie czy taki gracz już istnieje
-                '''try:
-                    rekru = Recruitment()
-                    rekru.bot = self
-                    rekru.add_to_database(member.id, serwer.id)
-                    print(f"dodałem: {member.name}")
-                except:
-                    print(f"{member.name} już jest")'''
-                response = requests.get(self.url)
-                response.raise_for_status() 
-                data = response.json()
-                found_player = False
-                for row in data["whitelist"]: #przeszukuje całą listę
-                    if str(member.id) == row["idDiscord"]:
-                        found_player = True
-                        break
-                if not found_player:
-                    print(member.display_name)
-                    data = {
-                        "idDiscord": str(member.id)
-                    }
-                    response = requests.post(self.url, json=data)
-                    response.raise_for_status()
 
     def class_initialize(self):
         self.db = Database(self)
         self.db.servers_verification(self.guilds)
         self.createGroupsBtn = CreateGroupsBtn(self)
-        self.createPlanBtn = CreatePlanBtn(self)
         self.recruView = MyView(self)
         self.binds = Binds(self)
         self.others = Others(self)
         self.pings = Pings(self)
-        self.presenceTW = Presence(self)
         self.list = Lists(self)
         self.viewMenu = ViewMenu(self)
+        self.viewMenu2 = ViewMenu2(self)
+        self.ViewMenuEnd = ViewMenuEng(self)
+        self.presenceTW = Presence(self)
         self.tree.add_command(self.list)
         self.tree.add_command(self.binds)
         self.add_view(self.createGroupsBtn)
-        self.add_view(self.createPlanBtn)
         self.add_view(self.recruView)
         self.add_view(self.viewMenu)
+        self.add_view(self.viewMenu2)
+        self.add_view(self.ViewMenuEnd)
+        self.add_view(EditGroupBtn())
 
     async def time_to_config(self, message):
         if message.author.id != self.user.id and self.wait_msg:
@@ -186,6 +161,38 @@ class MyBot(commands.Bot):
                     self.db.del_editing_user(self.editing_user[message.author.display_name])
                     del self.editing_user[message.author.display_name]
 
+    async def on_voice_state_update(self, member, before, after):
+        if after.channel and after.channel.id == self.channel_id:
+            role = discord.utils.get(member.guild.roles, id=self.role_id)
+            if role in member.roles:
+                sound_file = "sound/secretary.mp3"
+                voice_channel = self.get_channel(self.channel_id)
+                if voice_channel and isinstance(voice_channel, discord.VoiceChannel):
+                    # Sprawdzenie, czy bot jest już w kanale
+                    if not any(member.id == self.user.id for member in voice_channel.members):
+                        vc = await voice_channel.connect()
+                        print(f"Bot dołączył na kanał rekrutacyjny do: {member.display_name}")
+
+                        # Odtwarzanie dźwięku
+                        vc.play(discord.FFmpegPCMAudio(sound_file))
+
+                        # Czekanie na zakończenie odtwarzania
+                        while vc.is_playing():
+                            await asyncio.sleep(2)
+                        
+                        # Rozłączanie bota po odtworzeniu dźwięku
+                        await vc.disconnect()
+                    
+    async def update_data(self):
+        results = self.db.get_results(f"SELECT secretary FROM Others WHERE discord_server_id = %s", (1232957904597024882, ))
+        results = results[0][0]
+        if results and type(results) == str:
+            results = json.loads(results)
+        if len(results) < 2:
+            return
+        self.channel_id = int(results[0])
+        self.role_id = int(results[1])
+                    
     async def anime_ping(self, message):
         if message.channel.id == 950694117711687732:
             async for msg in message.channel.history(limit=1):
@@ -197,6 +204,40 @@ class MyBot(commands.Bot):
                             if msg.content.lower() in str(embed.title).lower():
                                 await channelAnime.send(f"{msg.author.mention}")
 
+    async def szpieg(self, message):
+        if message.guild is not None:
+            if message.guild.id in [1105196730414272562, 1232957904597024882]:
+                erebus = 1105196731282489438
+                if message.channel.id == erebus or message.channel.id == 1232957905033232462:
+                    narady_channel = bot.get_channel(1269030953456504852)
+                    rada_channel = bot.get_channel(1249371087717011476)
+                    nazwa = message.author.display_name
+                    data = message.created_at.strftime("%Y-%m-%d")
+                    file = None
+                    if message.attachments:
+                        attachment = message.attachments[0]
+                        file_content = await attachment.read()
+                        file = discord.File(io.BytesIO(file_content), filename=attachment.filename)
+
+                    if file != None:
+                        try:
+                            if message.channel.id == erebus:
+                                await narady_channel.send(content=f"**{nazwa}** - *{data}*\n {message.content}", file=file)
+                            elif message.channel.id == 1232957905033232462:
+                                await rada_channel.send(content=f"**{nazwa}** - *{data}*\n {message.content}", file=file)
+                        except:
+                            if message.channel.id == erebus:
+                                await narady_channel.send(f"**{nazwa}** - *{data}*\n {message.content}")
+                            elif message.channel.id == 1232957905033232462:
+                                await rada_channel.send(f"**{nazwa}** - *{data}*\n {message.content}")
+                    else:
+                        if message.channel.id == erebus:
+                                await narady_channel.send(f"**{nazwa}** - *{data}*\n {message.content}")
+                        elif message.channel.id == 1232957905033232462:
+                            await rada_channel.send(f"**{nazwa}** - *{data}*\n {message.content}")                              
+
+
 bot = MyBot()
+subprocess.Popen(['./start_gunicorn.sh'])
 load_dotenv()
 bot.run(os.getenv('BOT_TOKEN'))

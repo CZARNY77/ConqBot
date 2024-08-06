@@ -1,42 +1,31 @@
 import discord
 import asyncio
+from discord import ui
 
 class CreateGroupsBtn(discord.ui.View):
     def __init__(self, bot) -> None:
         super().__init__(timeout = None)
-        self.edit_group_btn = EditGroupBtn()
-        bot.add_view(self.edit_group_btn)
+        self.bot = bot
         
-        @bot.command()    
+        @bot.tree.command(name="create_group")      
         async def createGroup(ctx):
-            await bot.del_msg(ctx)
-            await ctx.send(view=self)
+            await ctx.response.send_message(view=self)
 
     #custom emoji w przyciskach
-    newEmoji = discord.PartialEmoji(name="ojej", id=887058401132183623)
+    newEmoji = discord.PartialEmoji(name="pepe_At_Arms", id=1235041675047342181)
     @discord.ui.button(label="Stwórz Grupe", custom_id="btn_group-1", style=discord.ButtonStyle.success, emoji=newEmoji)
     async def button_create_group(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            #sprawdzanie numeru grupy
-            groups_count = 1
-            async for message in interaction.channel.history(limit=100):
-                if message.author == interaction.message.author:
-                    if message.embeds:
-                        groups_count += 1
-            #Tworzenie embed grupy
-            player_color = interaction.user.color
-            self.embed = discord.Embed(title=f"Grupa {groups_count}", color=player_color)
-            self.embed.add_field(name=f"Lista graczy: 1/5", value=f"{interaction.user.mention}", inline=True)
-            await interaction.channel.send(embed=self.embed, view=self.edit_group_btn)
-            await interaction.response.defer()
-            #await interaction.response.send_message(f'Grupa została pomyślnie utworzona.', ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f'Coś poszło nie tak, spróbuj jeszcze raz. Jeśli błąd się powtarza zgłoś to do administracji.\n<{e}>', ephemeral=True)
+        await interaction.response.send_modal(CreateGroupsForm(self.bot))
 
+    async def clear_history(self, channel):
+        async for message in channel.history(limit=100):
+            if message.embeds and message.author.id == self.bot.user.id:
+                await message.delete()
+        
 class EditGroupBtn(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout = None)
-        self.user_select = discord.ui.MentionableSelect(custom_id="user_select", placeholder="Wybierz użytkownika", min_values=1, max_values=5, row=1)
+        self.user_select = discord.ui.MentionableSelect(custom_id="user_select", placeholder="Zaproś użytkownika", min_values=1, max_values=5, row=1)
         self.add_item(self.user_select)
         self.user_select.callback = self.select_invitation
 
@@ -148,3 +137,28 @@ class EditGroupBtn(discord.ui.View):
         except Exception as e:
             await interaction.response.send_message(f'Coś poszło nie tak, spróbuj jeszcze raz. Jeśli błąd się powtarza zgłoś to do administracji.\n<{e}>', ephemeral=True)
 
+class CreateGroupsForm(ui.Modal):
+    def __init__(self, bot):
+        super().__init__(title="Stwórz grupe")
+        self.descriptions = ui.TextInput(label='Podaj opis', placeholder="np. DZIEŃ, GODZINA XX:XX")
+        self.add_item(self.descriptions)
+        self.edit_group_btn = EditGroupBtn()
+        bot.add_view(self.edit_group_btn)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            #sprawdzanie numeru grupy
+            groups_count = 1
+            async for message in interaction.channel.history(limit=100):
+                if message.author == interaction.message.author:
+                    if message.embeds:
+                        groups_count += 1
+            #Tworzenie embed grupy
+            player_color = interaction.user.color
+            self.embed = discord.Embed(title=f"Grupa {groups_count}", color=player_color, description=self.descriptions)
+            self.embed.add_field(name=f"Lista graczy: 1/5", value=f"{interaction.user.mention}", inline=True)
+            await interaction.channel.send(embed=self.embed, view=self.edit_group_btn)
+            await interaction.response.defer()
+            #await interaction.response.send_message(f'Grupa została pomyślnie utworzona.', ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f'Coś poszło nie tak, spróbuj jeszcze raz. Jeśli błąd się powtarza zgłoś to do administracji.\n<{e}>', ephemeral=True)

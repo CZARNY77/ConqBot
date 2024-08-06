@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Konqueruś</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('index') }}">| Ogólne |</a>
+        <a href="{{ url_for('tw_points') }}">| Punkty za TW |</a>
+        <a href="{{ url_for('tw') }}">| TW |</a>
+    </nav>
+    <h1>Wojny Terytorialne</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Ilość</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for day, count in tw.items() %}
+            <tr>
+                <td>{{ day }}</td>
+                <td>{{ count }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

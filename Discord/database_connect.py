@@ -3,12 +3,15 @@ import discord
 import json
 import asyncio
 import requests
+import pytz
+from datetime import datetime, timezone
 
 class Database():
   def __init__(self, bot) -> None:
+    self.polish_timezone = pytz.timezone('Europe/Warsaw')
     self.bot = bot
+    self.cursor = None
     self.mydb = self.connect_with_db()
-    self.cursor = self.mydb.cursor()
     self.edited_field = {}
     self.editing_users = {}
     self.edited_guild = {}
@@ -16,29 +19,41 @@ class Database():
     self.conf_field = {
       1:("ID podstawowych ról (podajemy po przecinku, pierwsza jest główna rola)", "basic_roles"),
       2:("ID ról lineup'ów (podajemy po przecinku)", "lineup_roles"),
-      3:("ID roli do obsługi bota", "officer_id"),
-      4:("ID ról na stronke(pierwszy dostaje ekstra punkty za TW)","extra_role_id"),
-      5:("ID głównego kanału", "main_id"),
-      6:("ID głównego kanału na logi", "general_logs_id"),
-      7:("ID kanału na logi rekruterów", "recruiter_logs_id"),
-      8:("ID kanałów z obecnością (podajemy po przecinku)","presence_channels_id"),
-      9:("ID kanału do wyświetlania obecnośći z TW","attendance_list_from_TW"),
-      10:("ID serwera na TW", "alliance_server_id"),
-      11:("ID ról na TW (jako pierwszą role podaj swoją)", "roles"),
+      3:("ID ról rodów (podajemy po przecinku)", "house_roles"),
+      4:("ID roli do obsługi bota", "officer_id"),
+      5:("ID roli urlop", "vacation_id"),
+      6:("ID ról na stronke (pierwszy dostaje ekstra punkty za TW)","extra_role_id"),
+      7:("ID roli ex-player", "explayer_role"),
+      8:("ID głównego kanału", "main_id"),
+      9:("ID głównego kanału na logi", "general_logs_id"),
+      10:("ID kanału na logi rekruterów", "recruiter_logs_id"),
+      11:("ID kanałów z obecnością (podajemy po przecinku)","presence_channels_id"),
+      12:("ID kanału do wyświetlania obecnośći z TW","attendance_list_from_TW"),
+      13:("ID serwera na TW", "alliance_server_id"),
+      14:("ID ról na TW (jako pierwszą role podaj swoją)", "roles"),
+      15:("ID kanału od treningu", "training_channel_id"),
+      16:("ID kanału rekrutacyjnego i roli niezweryfikowanych", "secretary"),
+      17:("Nazwa rodu", "house_name"),
       }
     #inaczej połączyć z powyżej
     self.tables = {
       "basic_roles": "Roles",
       "extra_role_id": "Roles",
       "lineup_roles": "Roles",
+      "house_roles": "Roles",
       "officer_id": "Roles",
+      "vacation_id": "Roles",
+      "explayer_role": "Roles",
+      "house_name": "Roles",
       "main_id": "Channels",
       "general_logs_id": "Channels",
       "recruiter_logs_id": "Channels",
       "presence_channels_id": "Channels",
       "attendance_list_from_TW": "Channels",
+      "training_channel_id": "Channels",
       "alliance_server_id": "Alliance_Server",
-      "roles": "Alliance_Server"
+      "roles": "Alliance_Server",
+      "secretary": "Others"
     }
 
     @bot.command()
@@ -68,16 +83,26 @@ class Database():
         password=config["password"],
         database=config["database"]
       )
+      self.cursor = mydb.cursor()
       return mydb
     except Exception as e:
       print(e)
 
   async def keep_alive(self):
     try:
+      if self.mydb is None or not self.mydb.is_connected():
+        print(f"{datetime.now(self.polish_timezone).strftime('%H:%M')} Reconnecting to the database...")
+        self.cursor.close()
+        self.mydb.close()
+        self.connect_with_db()
+      else:
         self.mydb.ping(reconnect=True, attempts=3, delay=5)
     except mysql.connector.Error as err:
         print(f"Error: {err}")
-        self.mydb.reconnect(attempts=3, delay=5)
+        try:
+            self.mydb.reconnect(attempts=3, delay=5)
+        except mysql.connector.Error as reconnect_err:
+            print(f"Error during reconnect: {reconnect_err}")
 
   def get_tables(self): # pobiera wszystkie tabele
     self.cursor.execute("SHOW TABLES")
@@ -94,9 +119,9 @@ class Database():
       tables_and_columns[table_name] = column_details 
     return tables_and_columns
 
-  def add_new_guild(self, id, name): #dodanie nowego serwera do bazydanych
+  def add_new_guild(self, id, nazwa): #dodanie nowego serwera do bazydanych
     sql = "INSERT INTO Discord_Servers (ID, name) VALUES (%s, %s)"
-    val = (id, name)
+    val = (id, nazwa)
     self.cursor.execute(sql, val)
     self.mydb.commit()
     print("dodałem")
@@ -179,7 +204,7 @@ class Database():
       for name, type in columns:
         if name == edited_field:
           data = data.replace(' ', '')
-          if type == "varchar(255)": #gdy podajemy więcej niż jedną role konwertujemy na json
+          if type == "varchar(255)" and name != "house_name": #gdy podajemy więcej niż jedną role konwertujemy na json
             data = json.dumps(data.split(","))
           self.send_data(f"INSERT INTO {table} (discord_server_id, {edited_field}) VALUES (%s, %s) ON DUPLICATE KEY UPDATE {edited_field} = VALUES({edited_field});""", (edited_guild, data))
           break
@@ -191,8 +216,11 @@ class Database():
   def get_specific_value(self, id, column_name):
     specific_value = self.get_results(f"SELECT {column_name} FROM {self.tables[column_name]} WHERE discord_server_id = %s", (id, ))
     if specific_value and type(specific_value[0][0]) == str:
-      specific_value = json.loads(specific_value[0][0])
-      return specific_value
+      try:
+        specific_value = json.loads(specific_value[0][0])
+        return specific_value
+      except:
+        return specific_value[0][0]    
     elif specific_value:
       return specific_value[0][0]
     return None
@@ -206,9 +234,19 @@ class Database():
         return True
     return False
   
+  def check_TW_role_permissions(self, member, id):
+    if member.guild_permissions.administrator:
+      return True
+    service = self.get_specific_value(id, "extra_role_id")
+    if service:
+      for role in member.roles:
+        if role.id == int(service[0]):
+          return True
+      return False
+    
   def check_type(self, results, id, column_name): # 
     guild = self.bot.get_guild(id)
-    if type(results) == str:
+    if type(results) == str and column_name not in ["nick", "house_name"]:
       results = json.loads(results)
       results = list(map(int, results))
     if isinstance(results, int):
@@ -224,7 +262,7 @@ class Database():
           return "Nie znaleziono ID"
     elif isinstance(results, list):
         new_result = []
-        for result in results:
+        for i, result in enumerate(results):
           try:
             if self.tables[column_name] in ["Roles"]:
               new_result.append(guild.get_role(result).name)
@@ -232,6 +270,11 @@ class Database():
               new_result.append(guild.get_channel_or_thread(result).name)
             elif column_name in ["roles"]:
               new_result.append(guild.get_role(result).name)
+            elif column_name in ["secretary"]:
+                if i == 0:
+                    new_result.append(guild.get_channel_or_thread(result).name)
+                elif i == 1:
+                    new_result.append(guild.get_role(result).name)
           except:
             new_result.append("Nie znaleziono ID")
         return new_result
@@ -246,7 +289,7 @@ class Database():
 
   def update_players_on_website(self, guild_id):
     try:
-      with open('Discord/Keys/config.json', 'r') as file:
+      with open('/home/container/Discord/Keys/config.json', 'r') as file:
           url = json.load(file)["kop_users"]
       guild = self.bot.get_guild(guild_id)
       result = self.get_results("SELECT id_player, TW_points, signup_points, recruitment_points, activity_points FROM Players WHERE discord_server_id = %s", (guild_id,))
@@ -280,9 +323,9 @@ class Database():
       print(e)
 
   def del_with_whitelist(self, member_id):
-    with open('Discord/Keys/config.json', 'r') as file:
+    with open('/home/container/Discord/Keys/config.json', 'r') as file:
       url = json.load(file)["kop_whitelist"]
-    full_url = f"{url}?id={member_id}"
+    full_url = f"{url}/{member_id}"
     print(full_url)
     response = requests.delete(full_url)
     response.raise_for_status()
