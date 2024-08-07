@@ -8,7 +8,7 @@ class ViewMenu(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=None)
         self.bot = bot
-        with open('/home/container/Discord/Keys/config.json', 'r') as file:
+        with open('Discord/Keys/config.json', 'r') as file:
             self.url = json.load(file)["kop_singup"]
 
         @bot.tree.command(name="menu")
