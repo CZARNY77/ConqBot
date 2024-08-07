@@ -202,39 +202,7 @@ class MyBot(commands.Bot):
                         channelAnime = bot.get_channel(950694117711687732)
                         async for msg in channelList.history(limit=100):
                             if msg.content.lower() in str(embed.title).lower():
-                                await channelAnime.send(f"{msg.author.mention}")
-
-    async def szpieg(self, message):
-        if message.guild is not None:
-            if message.guild.id in [1105196730414272562, 1232957904597024882]:
-                erebus = 1105196731282489438
-                if message.channel.id == erebus or message.channel.id == 1232957905033232462:
-                    narady_channel = bot.get_channel(1269030953456504852)
-                    rada_channel = bot.get_channel(1249371087717011476)
-                    nazwa = message.author.display_name
-                    data = message.created_at.strftime("%Y-%m-%d")
-                    file = None
-                    if message.attachments:
-                        attachment = message.attachments[0]
-                        file_content = await attachment.read()
-                        file = discord.File(io.BytesIO(file_content), filename=attachment.filename)
-
-                    if file != None:
-                        try:
-                            if message.channel.id == erebus:
-                                await narady_channel.send(content=f"**{nazwa}** - *{data}*\n {message.content}", file=file)
-                            elif message.channel.id == 1232957905033232462:
-                                await rada_channel.send(content=f"**{nazwa}** - *{data}*\n {message.content}", file=file)
-                        except:
-                            if message.channel.id == erebus:
-                                await narady_channel.send(f"**{nazwa}** - *{data}*\n {message.content}")
-                            elif message.channel.id == 1232957905033232462:
-                                await rada_channel.send(f"**{nazwa}** - *{data}*\n {message.content}")
-                    else:
-                        if message.channel.id == erebus:
-                                await narady_channel.send(f"**{nazwa}** - *{data}*\n {message.content}")
-                        elif message.channel.id == 1232957905033232462:
-                            await rada_channel.send(f"**{nazwa}** - *{data}*\n {message.content}")                              
+                                await channelAnime.send(f"{msg.author.mention}")                            
 
 
 bot = MyBot()

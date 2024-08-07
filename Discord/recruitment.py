@@ -6,9 +6,9 @@ import requests
 class Recruitment(commands.Cog):
     def __init__(self, interaction = None, log_channel = None):
         self.interaction = interaction
-        with open('/home/container/Discord/Keys/config.json', 'r') as file:
+        with open('Discord/Keys/config.json', 'r') as file:
           self.url = json.load(file)["kop_whitelist"]
-        with open('/home/container/Discord/Keys/config.json', 'r') as file:
+        with open('Discord/Keys/config.json', 'r') as file:
           self.survey_url = json.load(file)["kop_survey"]
         self.recruitment_stage_1_points = 0.5
         self.recruitment_stage_2_points = 0.5
@@ -29,11 +29,11 @@ class Recruitment(commands.Cog):
     async def add_player_to_whitelist(self, player_name, choice, in_house = None, recru_process = None, comment = None, request = None):
         try:
           if choice == 1:
-          	self.which_stage = f"**Etap 1.** "
+            self.which_stage = f"**Etap 1.** "
           elif choice == 2:
-          	self.which_stage = f"**Etap 2.** "
+            self.which_stage = f"**Etap 2.** "
           elif choice == 3:
-          	self.which_stage = f"**Cała rekrutacja.** "
+            self.which_stage = f"**Cała rekrutacja.** "
           member_mention = self.get_user(player_name)
           if member_mention == "-":
             await self.create_embed(4, player_name, member_mention, comment)

@@ -289,7 +289,7 @@ class Database():
 
   def update_players_on_website(self, guild_id):
     try:
-      with open('/home/container/Discord/Keys/config.json', 'r') as file:
+      with open('Discord/Keys/config.json', 'r') as file:
           url = json.load(file)["kop_users"]
       guild = self.bot.get_guild(guild_id)
       result = self.get_results("SELECT id_player, TW_points, signup_points, recruitment_points, activity_points FROM Players WHERE discord_server_id = %s", (guild_id,))
@@ -323,7 +323,7 @@ class Database():
       print(e)
 
   def del_with_whitelist(self, member_id):
-    with open('/home/container/Discord/Keys/config.json', 'r') as file:
+    with open('/Discord/Keys/config.json', 'r') as file:
       url = json.load(file)["kop_whitelist"]
     full_url = f"{url}/{member_id}"
     print(full_url)
