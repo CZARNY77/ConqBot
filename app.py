@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, render_template, jsonify
+from flask import Flask, render_template_string, render_template, jsonify, request
 import json
 from dotenv import load_dotenv
 import os
@@ -10,6 +10,7 @@ TOKEN = os.getenv('BOT_TOKEN')
 API_URL = 'https://discord.com/api/v10'
 GUILD_ID = '1232957904597024882'
 role_id = '1236647699831586838'
+headers = {'Authorization': f'Bot {TOKEN}'}
 
 template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Discord/HTML/templates')
 static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Discord/HTML/static')
@@ -176,3 +177,31 @@ def connect_with_db():#łączy się z bazą danych
     except Exception as e:
       print(e)
   
+
+@app.route('/info', methods=['GET'])
+def get_info():
+    return jsonify({"info": "",})
+
+@app.route('/user', methods=['GET'])
+async def get_user():
+    guild_id = request.args.get('guild_id', type=int)
+    user_id = request.args.get('id', type=int)
+    if guild_id and user_id:
+        response = requests.get(f'{API_URL}/guilds/{guild_id}/members/{user_id}', headers=headers, params={'limit': 1})
+        member  = response.json()
+        if member:
+            return jsonify({"id": user_id, "name": member.name})
+        else:
+            return jsonify({"error": "User not found"}), 404
+    else:
+        return jsonify({"error": "Invalid or missing guild_id or user_id parameter"}), 400
+    
+
+@app.route('/guilds/<int:guild_id>/members/<int:user_id>', methods=['GET'])
+async def get_user(guild_id, user_id):
+    response = requests.get(f'{API_URL}/guilds/{guild_id}/members/{user_id}', headers=headers, params={'limit': 1})
+    member  = response.json()
+    if member:
+        return jsonify({"guild_id": guild_id, "user_id": user_id, "name": member.name})
+    else:
+        return jsonify({"error": "User not found"}), 404

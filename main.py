@@ -85,6 +85,11 @@ class MyBot(commands.Bot):
         await self.TW_day()
         await self.training_day()
 
+    async def surveys_backup(self):
+        time = datetime.now(self.polish_timezone).strftime("%H:%M")
+        if time in ["00:00"]:
+            self.db.surveys_backup()
+
     async def TW_day(self):
         day = datetime.now().strftime("%A")
         if day == "Tuesday" or day == "Saturday":
@@ -158,8 +163,8 @@ class MyBot(commands.Bot):
                 except asyncio.TimeoutError:
                     await message.channel.send("Przekroczono czasowy limit.")
                     self.wait_msg = False
-                    self.db.del_editing_user(self.editing_user[message.author.display_name])
-                    del self.editing_user[message.author.display_name]
+                    self.db.del_editing_user(self.editing_user[message.author.id])
+                    del self.editing_user[message.author.id]
 
     async def on_voice_state_update(self, member, before, after):
         if after.channel and after.channel.id == self.channel_id:
@@ -203,7 +208,6 @@ class MyBot(commands.Bot):
                         async for msg in channelList.history(limit=100):
                             if msg.content.lower() in str(embed.title).lower():
                                 await channelAnime.send(f"{msg.author.mention}")                            
-
 
 bot = MyBot()
 subprocess.Popen(['./start_gunicorn.sh'])

@@ -90,6 +90,7 @@ class ViewMenu(discord.ui.View):
     async def button_config(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.bot.db.check_role_permissions(interaction.user, interaction.guild_id):
             try:
+                self.bot.db.conf_field = self.bot.db.conf_field_pl
                 await self.bot.db.bot_configuration(interaction.user, interaction.guild_id)
                 self.bot.wait_msg = True
                 self.bot.editing_user[interaction.user.display_name] = interaction.user

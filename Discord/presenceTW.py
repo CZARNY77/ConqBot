@@ -12,41 +12,47 @@ class Presence(commands.Cog):
         self.points_accepted = 0.5
         self.points_signup = 0.25
         self.points_extra = 0.25
-        self.date = {}
+        self.data = {}
         with open('Discord/Keys/config.json', 'r') as file:
           self.url = json.load(file)["kop_singup"]
 
-    async def get_list(self): #pobieranie graczy z listy obecności tych tylko zaznaczonych na tak
-        results = self.bot.db.get_results(f"SELECT discord_server_id FROM Alliance_Server", ( ))
-        self.date = {}
-        for result in results:
-            if result and result[0]:
-                guild = self.bot.get_guild(int(result[0]))
-                presence_channels = self.get_presence_channels(guild)
-                if not presence_channels:
-                    continue
-                for i, channel in enumerate(presence_channels):
-                    all_players = guild.members
-                    players_list = []
-                    async for msg in channel.history(limit=30):
-                        if msg.author.name == 'Apollo' and msg.embeds:
-                            self.apollo_list(msg, all_players, i+1)
+    async def get_list(self, guild): #pobieranie graczy z listy obecności tych tylko zaznaczonych na tak
+        self.data = {}
+        presence_channels = self.get_presence_channels(guild)
+        house = self.bot.db.get_specific_value(guild.id, "house_name")
+        lineups_role_id = self.bot.db.get_specific_value(guild.id, "lineup_role")
+        if not presence_channels:
+            #dodać aby wysyłało na logi że nie ma kanału nowa klasa
+            print("nie ma kanału")
+            return
+        elif not house:
+            print("brak house")
+            return
+        elif not lineups_role_id:
+            print("brak lineup'ów")
+            return
+        self.data["house"] = str(house)
+        self.data["lineup"] = []
+        self.lineups_role = [guild.get_role(int(lineup_id)) for lineup_id in lineups_role_id]
+        for channel in presence_channels:
+            all_players = guild.members
+            async for msg in channel.history(limit=30):
+                if msg.author.name == 'Apollo' and msg.embeds:
+                    self.apollo_list(msg, all_players, guild)
+                    break
+                elif msg.author.name == 'Raid-Helper' and msg.embeds:
+                    if guild.id == 1105196730414272562:
+                        if self.erebus_raid_helper_list(msg, channel, guild):
                             break
-                        elif msg.author.name == 'Raid-Helper' and msg.embeds:
-                            if guild.id == 1105196730414272562:
-                                if self.erebus_raid_helper_list(msg, channel, guild, all_players):
-                                    break
-                            else:
-                                if self.raid_helper_list(msg):
-                                    break
+                    else:
+                        if self.raid_helper_list(msg, guild):
+                            break
         try:
-            self.date[f"lineup_{8}"] = []
-            delete_response  = requests.delete(f"{self.url}/{self.date['date']}")
+            delete_response  = requests.delete(f"{self.url}/{self.data['date']}")
             delete_response.raise_for_status()
 
-            response  = requests.post(self.url, json=self.date)
+            response  = requests.post(f"{self.url}/{self.data['date']}", json=self.data)
             response.raise_for_status()
-            players_list.clear()
         except requests.exceptions.HTTPError as e:
             log_channel = self.bot.get_channel(int(self.bot.db.get_specific_value(guild.id, "general_logs_id")))
             await log_channel.send(content = f"Wystąpił błąd HTTP: {e} \n {response.text}")
@@ -171,9 +177,11 @@ class Presence(commands.Cog):
         async for message in ctx.channel.history(limit=1):
             await message.delete()
 
-    def apollo_list(self, msg, all_players, lineup):
+    def apollo_list(self, msg, all_players, guild):
+        role_id = int(msg.content.strip('<@&>'))
+        lineup_name = guild.get_role(role_id).name
         fields = msg.embeds[0].fields
-        self.date["date"] = self.extract_timestamps(fields[0].value)
+        self.data["date"] = self.extract_timestamps(fields[0].value)
         for field in fields:
             if "Accepted" in field.name:
                 players = field.value[4:].splitlines()
@@ -185,60 +193,18 @@ class Presence(commands.Cog):
                     # Tworzymy listę wspólnych członków
                     common_members = [member for member in all_players if member.display_name in new_players]
                     players_list = [str(member.id) for member in common_members]
-                    self.date[f"lineup_{lineup}"] = players_list
+                    self.data["lineup"].append({
+                        "name": lineup_name,
+                        "signup": players_list})
                     break
                 break
 
-    def erebus_raid_helper_list(self, msg, channel, guild, all_players):
+    def erebus_raid_helper_list(self, msg, channel, guild):
         today = datetime.now().strftime('%A')
         if today in ["Sunday", "Monday", "Tuesday"] and channel.id == 1151042172800487444:
             return True
         elif today in ["Wednesday", "Thursday", "Friday", "Saturday"] and channel.id == 1219406455145234492 :
             return True
-        fields = msg.embeds[0].fields
-        if len(fields) > 1:
-            max_fields = len(fields)
-            linup_1 = []
-            linup_2 = []
-            new_players = []
-            for i in range(3, max_fields-1):
-                players = fields[i].value.splitlines()
-                if "Declined" in players[0]:
-                    continue
-                for player in players:
-                    if "Accepted" in player or "\u200e" in player:
-                        continue
-                    if player.split():
-                        player = player.replace('`', '').replace('**', '')
-                        parts = player.split()
-                        nickname = parts[-1]
-                        nickname = nickname.replace('\\', '')
-                        new_players.append(nickname)
-            if len(new_players) > 0 and players is not None:
-                lineup_roles = self.bot.db.get_specific_value(guild.id, "lineup_roles")
-                error_players = new_players
-                common_members = []
-                for player in new_players:
-                    for member in all_players:
-                        if player in member.display_name.replace(' ', ''):
-                            common_members.append(member)
-                            break
-                for member in common_members:
-                    for player in new_players:
-                        if player in member.display_name.replace(' ', ''):
-                            error_players.remove(player)
-                            break
-                lineup_role = guild.get_role(int(lineup_roles[0]))
-                for member in common_members:
-                    if lineup_role in member.roles:
-                        linup_1.append(str(member.id))
-                    else:
-                        linup_2.append(str(member.id))
-                self.date[f"lineup_{5}"] = linup_1
-                self.date[f"lineup_{6}"] = linup_2
-            return True
-
-    def raid_helper_list(self, msg):
         fields = msg.embeds[0].fields
         for field in fields:
             if "[Web View]" in field.value:
@@ -250,9 +216,60 @@ class Presence(commands.Cog):
                     response = requests.get(url)
                     response.raise_for_status()
                     raid_helper_list = response.json()
-                    player_accepted = []
+                    players_accepted = []
                     for signUps in raid_helper_list["signUps"]:
                         if signUps["className"] == "Accepted":
-                            player_accepted.append(signUps["userId"])
-                    self.date[f"lineup_{7}"] = player_accepted
+                            players_accepted.append(str(signUps["userId"]))
+                    for lineup in self.lineups_role:
+                        new_lineup = {
+                            "name": lineup.name,
+                            "signup": []
+                        }
+                        self.data["lineup"].append(new_lineup)
+                    for player_id in players_accepted:
+                        player = guild.get_member(int(player_id))
+                        player_roles = set(player.roles)
+                        for lineup in self.lineups_role:
+                            if lineup in player_roles:
+                                # Znalezienie lineup w self.data["lineup"]
+                                lineup_entry = next((l for l in self.data["lineup"] if l["name"] == lineup.name), None)
+                                if lineup_entry:
+                                    # Dodajemy ID gracza do signup w odpowiednim lineup
+                                    lineup_entry["signup"].append(player_id)
+                                break  # Zatrzymujemy sprawdzanie, gdy znajdziemy pierwszy pasujący lineup
+                return True
+
+    def raid_helper_list(self, msg, guild):
+        fields = msg.embeds[0].fields
+        for field in fields:
+            if "[Web View]" in field.value:
+                event_id_pattern = re.compile(r'https://raid-helper\.dev/\w+/(\d+)')
+                matches = event_id_pattern.findall(field.value)
+                if matches:
+                    event_id = matches[0]
+                    url = "https://raid-helper.dev/api/v2/events/" + event_id
+                    response = requests.get(url)
+                    response.raise_for_status()
+                    raid_helper_list = response.json()
+                    players_accepted = []
+                    for signUps in raid_helper_list["signUps"]:
+                        if signUps["className"] == "Accepted":
+                            players_accepted.append(str(signUps["userId"]))
+                    for lineup in self.lineups_role:
+                        new_lineup = {
+                            "name": lineup.name,
+                            "signup": []
+                        }
+                        self.data["lineup"].append(new_lineup)
+                    for player_id in players_accepted:
+                        player = guild.get_member(int(player_id))
+                        player_roles = set(player.roles)
+                        for lineup in self.lineups_role:
+                            if lineup in player_roles:
+                                # Znalezienie lineup w self.data["lineup"]
+                                lineup_entry = next((l for l in self.data["lineup"] if l["name"] == lineup.name), None)
+                                if lineup_entry:
+                                    # Dodajemy ID gracza do signup w odpowiednim lineup
+                                    lineup_entry["signup"].append(player_id)
+                                break  # Zatrzymujemy sprawdzanie, gdy znajdziemy pierwszy pasujący lineup
                 return True

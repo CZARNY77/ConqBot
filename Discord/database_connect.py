@@ -15,46 +15,13 @@ class Database():
     self.edited_field = {}
     self.editing_users = {}
     self.edited_guild = {}
-    #przenieś do json
-    self.conf_field = {
-      1:("ID podstawowych ról (podajemy po przecinku, pierwsza jest główna rola)", "basic_roles"),
-      2:("ID ról lineup'ów (podajemy po przecinku)", "lineup_roles"),
-      3:("ID ról rodów (podajemy po przecinku)", "house_roles"),
-      4:("ID roli do obsługi bota", "officer_id"),
-      5:("ID roli urlop", "vacation_id"),
-      6:("ID ról na stronke (pierwszy dostaje ekstra punkty za TW)","extra_role_id"),
-      7:("ID roli ex-player", "explayer_role"),
-      8:("ID głównego kanału", "main_id"),
-      9:("ID głównego kanału na logi", "general_logs_id"),
-      10:("ID kanału na logi rekruterów", "recruiter_logs_id"),
-      11:("ID kanałów z obecnością (podajemy po przecinku)","presence_channels_id"),
-      12:("ID kanału do wyświetlania obecnośći z TW","attendance_list_from_TW"),
-      13:("ID serwera na TW", "alliance_server_id"),
-      14:("ID ról na TW (jako pierwszą role podaj swoją)", "roles"),
-      15:("ID kanału od treningu", "training_channel_id"),
-      16:("ID kanału rekrutacyjnego i roli niezweryfikowanych", "secretary"),
-      17:("Nazwa rodu", "house_name"),
-      }
+    with open('Discord/json/menu.json', 'r') as file:
+        menu = json.load(file)
+    self.conf_field = menu["conf_field"]
+    self.conf_field_pl = menu["conf_field"]
+    self.conf_field_eng = menu["conf_field_eng"]
     #inaczej połączyć z powyżej
-    self.tables = {
-      "basic_roles": "Roles",
-      "extra_role_id": "Roles",
-      "lineup_roles": "Roles",
-      "house_roles": "Roles",
-      "officer_id": "Roles",
-      "vacation_id": "Roles",
-      "explayer_role": "Roles",
-      "house_name": "Roles",
-      "main_id": "Channels",
-      "general_logs_id": "Channels",
-      "recruiter_logs_id": "Channels",
-      "presence_channels_id": "Channels",
-      "attendance_list_from_TW": "Channels",
-      "training_channel_id": "Channels",
-      "alliance_server_id": "Alliance_Server",
-      "roles": "Alliance_Server",
-      "secretary": "Others"
-    }
+    self.tables = menu["tables"]
 
     @bot.command()
     async def config(ctx):
@@ -149,8 +116,8 @@ class Database():
 
   async def bot_configuration(self, user, id):
     #zapisanie który użytkownik z jakiego dc edytuje można sprówbować stworzyć nową funkcję
-    self.editing_users[user.display_name] = user
-    self.edited_guild[user.display_name] = id
+    self.editing_users[user.id] = user
+    self.edited_guild[user.id] = id
 
     embed = discord.Embed(color=user.color, title="Co chcesz zmienić")
     data_to_display = {}
@@ -178,8 +145,8 @@ class Database():
     self.mydb.commit()
 
   async def user_configuration(self, msg):
-    player_name =  msg.author.display_name
-    if msg.author == self.editing_users[player_name]: #sprawdzenie czy dany użytkownik edytuje, musi wcześniej wywołać komende na serwerze
+    player_name =  msg.author.id
+    if msg.author.id == self.editing_users[player_name]: #sprawdzenie czy dany użytkownik edytuje, musi wcześniej wywołać komende na serwerze
       #sprawdzenie czy dany gracz nie cofną się do menu
       if msg.content == "cancel" and player_name in self.edited_field:
         del self.edited_field[player_name]
@@ -210,8 +177,8 @@ class Database():
           break
 
   def del_editing_user(self, user):
-    del self.editing_users[user.display_name]
-    del self.edited_guild[user.display_name]
+    del self.editing_users[user.id]
+    del self.edited_guild[user.id]
 
   def get_specific_value(self, id, column_name):
     specific_value = self.get_results(f"SELECT {column_name} FROM {self.tables[column_name]} WHERE discord_server_id = %s", (id, ))
@@ -330,3 +297,15 @@ class Database():
     response = requests.delete(full_url)
     response.raise_for_status()
     print("usunięto gracza")
+
+  def surveys_backup(self):
+    try:
+      with open('Discord/Keys/config.json', 'r') as file:
+        url = json.load(file)["kop_survey"]
+      response = requests.get(url)
+      response.raise_for_status() 
+      data = response.json()
+      with open('jsons/surveys_backup.json', 'w', encoding='utf-8') as json_file:
+        json.dump(data, json_file, ensure_ascii=False, indent=4)
+    except:
+      print("coś poszło nie tak przy robieniu surveys backup.")

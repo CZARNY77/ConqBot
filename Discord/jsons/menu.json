@@ -1,0 +1,62 @@
+{
+    "conf_field": {
+      "1": ["ID podstawowych ról (podajemy po przecinku, pierwsza jest główna rola)", "basic_roles"],
+      "2": ["ID ról lineup'ów (podajemy po przecinku)", "lineup_roles"],
+      "3": ["ID ról rodów (podajemy po przecinku)", "house_roles"],
+      "4": ["ID roli do obsługi bota", "officer_id"],
+      "5": ["ID roli urlop", "vacation_id"],
+      "6": ["ID ról na stronke (pierwszy dostaje ekstra punkty za TW)", "extra_role_id"],
+      "7": ["ID roli ex-player", "explayer_role"],
+      "8": ["ID głównego kanału", "main_id"],
+      "9": ["ID głównego kanału na logi", "general_logs_id"],
+      "10": ["ID kanału na logi rekruterów", "recruiter_logs_id"],
+      "11": ["ID kanałów z obecnością (podajemy po przecinku)", "presence_channels_id"],
+      "12": ["ID kanału do wyświetlania obecności z TW", "attendance_list_from_TW"],
+      "13": ["ID serwera na TW", "alliance_server_id"],
+      "14": ["ID ról na TW (jako pierwszą rolę podaj swoją)", "roles"],
+      "15": ["ID kanału od treningu", "training_channel_id"],
+      "16": ["ID kanału rekrutacyjnego i roli niezweryfikowanych", "secretary"],
+      "17": ["Nazwa rodu", "house_name"]
+    },
+
+    "conf_field_eng": {
+      "1": ["ID of basic roles (provided as comma-separated values, the first is the main role)", "basic_roles"],
+      "2": ["ID of lineup roles (provided as comma-separated values)", "lineup_roles"],
+      "3": ["ID of house roles (provided as comma-separated values)", "house_roles"],
+      "4": ["ID of the role to manage the bot", "officer_id"],
+      "5": ["ID of the vacation role", "vacation_id"],
+      "6": ["ID of roles for the website (the first receives extra points for TW)", "extra_role_id"],
+      "7": ["ID of the ex-player role", "explayer_role"],
+      "8": ["ID of the main channel", "main_id"],
+      "9": ["ID of the main channel for logs", "general_logs_id"],
+      "10": ["ID of the recruiter logs channel", "recruiter_logs_id"],
+      "11": ["ID of presence channels (provided as comma-separated values)", "presence_channels_id"],
+      "12": ["ID of the channel to display TW attendance", "attendance_list_from_TW"],
+      "13": ["ID of the server for TW", "alliance_server_id"],
+      "14": ["ID of TW roles (your role should be the first one)", "roles"],
+      "15": ["ID of the training channel", "training_channel_id"],
+      "16": ["ID of the recruitment channel and unverified role", "secretary"],
+      "17": ["Name of the house", "house_name"]
+      },
+
+    "tables": {
+      "basic_roles": "Roles",
+      "extra_role_id": "Roles",
+      "lineup_roles": "Roles",
+      "house_roles": "Roles",
+      "officer_id": "Roles",
+      "vacation_id": "Roles",
+      "explayer_role": "Roles",
+      "house_name": "Roles",
+      "main_id": "Channels",
+      "general_logs_id": "Channels",
+      "recruiter_logs_id": "Channels",
+      "presence_channels_id": "Channels",
+      "attendance_list_from_TW": "Channels",
+      "training_channel_id": "Channels",
+      "alliance_server_id": "Alliance_Server",
+      "roles": "Alliance_Server",
+      "secretary": "Others"
+    }
+  }
+  
