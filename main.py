@@ -14,6 +14,7 @@ from Discord.groups import CreateGroupsBtn, EditGroupBtn
 from Discord.viewMenu import ViewMenu, ViewMenu2
 from Discord.viewMenuEng import ViewMenuEng
 from Discord.database_connect import Database
+from Discord.recruitment import Recruitment
 import subprocess
 from dotenv import load_dotenv
 import os
@@ -76,8 +77,10 @@ class MyBot(commands.Bot):
             await after.send(f"Masz przerwe na {minutes_left} min {seconds_left} sec.\nhttps://media.discordapp.net/attachments/1105633406764732426/1243121426828099635/BANhammer.gif?ex=6650528c&is=664f010c&hm=c294de1f339a4ca0ad4e73a943e92efe8defaba361330b41c22c8387060f10f5&=")
 
     async def on_member_remove(self, member):
-        if member.guild.id in [1232957904597024882, 1105196730414272562]: # do poprawy
-            self.db.del_with_whitelist(member.id)
+        recru_channel_log_id = self.db.get_specific_value(member.guild.id, "recruiter_logs_id")
+        recruitment = Recruitment(bot=self, log_channel=recru_channel_log_id)
+        await recruitment.del_player_to_whitelist(member.display_name, self.comment, member)
+        del recruitment
     
     @tasks.loop(seconds=60)
     async def loop_always(self):

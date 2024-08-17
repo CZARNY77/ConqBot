@@ -48,28 +48,37 @@ class Database():
         host=config["host"],
         user=config["user"],
         password=config["password"],
-        database=config["database"]
+        database=config["database"],
+        autocommit=True
       )
       self.cursor = mydb.cursor()
       return mydb
     except Exception as e:
-      print(e)
+      print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ❌ Error connecting to the database: {str(e)}")
+      return None
 
   async def keep_alive(self):
     try:
-      if self.mydb is None or not self.mydb.is_connected():
-        print(f"{datetime.now(self.polish_timezone).strftime('%H:%M')} Reconnecting to the database...")
-        self.cursor.close()
-        self.mydb.close()
-        self.connect_with_db()
-      else:
-        self.mydb.ping(reconnect=True, attempts=3, delay=5)
+        if self.mydb is None or not self.mydb.is_connected():
+            print(f"[{datetime.now(self.polish_timezone).strftime('%Y-%m-%d %H:%M:%S')}] 🔄 Reconnecting to the database...")
+            if self.cursor:
+                self.cursor.close()
+            if self.mydb:
+                self.mydb.close()
+            self.mydb = self.connect_with_db()
+            if self.mydb:
+                print(f"[{datetime.now(self.polish_timezone).strftime('%Y-%m-%d %H:%M:%S')}] ✅ Reconnected successfully.")
+            else:
+                print(f"[{datetime.now(self.polish_timezone).strftime('%Y-%m-%d %H:%M:%S')}] ❌ Reconnection failed.")
+        else:
+            self.mydb.ping(reconnect=True, attempts=3, delay=5)
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
+        print(f"[{datetime.now(self.polish_timezone).strftime('%Y-%m-%d %H:%M:%S')}] ❌ Database Error: {err}")
         try:
             self.mydb.reconnect(attempts=3, delay=5)
+            print(f"[{datetime.now(self.polish_timezone).strftime('%Y-%m-%d %H:%M:%S')}] ✅ Reconnected successfully.")
         except mysql.connector.Error as reconnect_err:
-            print(f"Error during reconnect: {reconnect_err}")
+            print(f"[{datetime.now(self.polish_timezone).strftime('%Y-%m-%d %H:%M:%S')}] ❌ Error during reconnect: {reconnect_err}")
 
   def get_tables(self): # pobiera wszystkie tabele
     self.cursor.execute("SHOW TABLES")
@@ -110,9 +119,21 @@ class Database():
       self.add_new_guild(server.id, server.name)
 
   def get_results(self, sql, val):
-    self.cursor.execute(sql, val)
-    results = self.cursor.fetchall()
-    return results
+    try:
+        self.cursor.execute(sql, val)
+        return self.cursor.fetchall()
+    except mysql.connector.errors.OperationalError as e:
+        if "Lost connection to MySQL server" in str(e):
+            print("Lost connection to MySQL server. Attempting to reconnect...")
+            try:
+                self.mydb.reconnect(attempts=3, delay=5)
+                self.cursor.execute(sql, val)  # Spróbuj ponownie wykonać zapytanie
+                return self.cursor.fetchall()
+            except mysql.connector.Error as reconnect_err:
+                print(f"Error during reconnect: {reconnect_err}")
+                raise reconnect_err
+        else:
+            raise e
 
   async def bot_configuration(self, user, id):
     #zapisanie który użytkownik z jakiego dc edytuje można sprówbować stworzyć nową funkcję

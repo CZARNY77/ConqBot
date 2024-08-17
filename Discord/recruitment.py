@@ -4,7 +4,7 @@ from discord.ext import commands
 import requests
 
 class Recruitment(commands.Cog):
-    def __init__(self, interaction = None, log_channel = None):
+    def __init__(self, interaction = None, log_channel = None, bot = None):
         self.interaction = interaction
         with open('Discord/Keys/config.json', 'r') as file:
           self.url = json.load(file)["kop_whitelist"]
@@ -13,8 +13,11 @@ class Recruitment(commands.Cog):
         self.recruitment_stage_1_points = 0.5
         self.recruitment_stage_2_points = 0.5
         self.which_stage = ""
-        if interaction != None:
-          self.bot = interaction.client
+        if interaction != None or bot != None:
+          if bot != None:
+            self.bot = bot
+          else:
+            self.bot = interaction.client
           self.basic_roles = self.bot.db.get_specific_value(interaction.guild_id, "basic_roles")
           self.house_roles = self.bot.db.get_specific_value(interaction.guild_id, "house_roles")
           self.lineup_roles = self.bot.db.get_specific_value(interaction.guild_id, "lineup_roles")
@@ -45,9 +48,10 @@ class Recruitment(commands.Cog):
           data = response.json()
           found_player = False
           for row in data["whitelist"]: #przeszukuje całą listę
-            if str(member_mention.id) == row["idDiscord"]:
-              found_player = True
-              break
+            if "idDiscord" in row:
+              if str(member_mention.id) == row["idDiscord"]:
+                found_player = True
+                break
           
           if found_player and choice != 2: #jeżeli gracz znaleziony i drugi etap rekrutacyjny 
             await self.create_embed(3, player_name, member_mention, comment)
@@ -103,10 +107,30 @@ class Recruitment(commands.Cog):
         async for message in ctx.channel.history(limit=1):
             await message.delete()
 
-    async def del_player_to_whitelist(self, player_name, comment):
+    async def del_player_to_whitelist(self, player_name, comment, member = None):
         try:
-            member_mention = self.get_user(player_name)
+            if member != None:
+              member_mention = member
+            else:
+              member_mention = self.get_user(player_name)
             if member_mention != "-":
+              survey_url = self.survey_url + f"?house={self.house_name}"
+              response = requests.get(self.survey_url)
+              response.raise_for_status()
+              data = response.json()
+              for row in data["surveys"]: #przeszukuje całą listę
+                discord_id = int(row["discordId"])
+                if discord_id == member_mention.id:
+                    if row["house"] != self.house_name:
+                      return
+                    row["house"] = ""
+                    response = requests.post(survey_url, json=row)
+                    # Sprawdzenie odpowiedzi
+                    if response.status_code == 200 or response.status_code == 201:
+                        print(f"{member_mention.display_name} został usunięty!")
+                    else:
+                        print(f"Błąd podczas wysyłania formularza: {response.status_code}, {response.text}")
+
               roles_to_remove = [int(role_id) for role_id in self.house_roles + self.lineup_roles + self.basic_roles]
               for role_id in roles_to_remove:
                 role = discord.utils.get(self.interaction.guild.roles, id=role_id)
@@ -213,10 +237,11 @@ class Recruitment(commands.Cog):
       data = response.json()
       found_player = False
       for row in data["whitelist"]: #przeszukuje całą listę
-        if str(member_mention.id) == row["idDiscord"]:
-          found_player = True
-          await self.create_embed(3, player_name, member_mention, comment)
-          break
+        if "idDiscord" in row:
+          if str(member_mention.id) == row["idDiscord"]:
+            found_player = True
+            await self.create_embed(3, player_name, member_mention, comment)
+            break
       if not found_player:
         data = {
             "idDiscord": str(member_mention.id)
@@ -229,6 +254,23 @@ class Recruitment(commands.Cog):
         await self.create_embed(2, player_name, member_mention, content=content, comment=comment)
         
     async def add_player_to_survey(self, player):
+        
+        response = requests.get(self.survey_url)
+        response.raise_for_status()
+        data = response.json()
+
+        for row in data["surveys"]: #przeszukuje całą listę
+            discord_id = int(row["discordId"])
+            if discord_id == player.id:
+                row["house"] = self.house_name
+                response = requests.post(self.survey_url, json=row)
+                if response.status_code == 200 or response.status_code == 201:
+                    print(f"{player.display_name} został dodany do rodu {self.house_name}!")
+                else:
+                    print(f"Błąd podczas wysyłania formularza: {response.status_code}, {response.text}")
+                return
+
+
         print(f"dodaje {player.display_name}")
         # Definiowanie ilości elementów w tablicach
         num_weapons = 13

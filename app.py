@@ -183,7 +183,7 @@ def get_info():
     return jsonify({"info": "",})
 
 @app.route('/user', methods=['GET'])
-async def get_user():
+def get_user():
     guild_id = request.args.get('guild_id', type=int)
     user_id = request.args.get('id', type=int)
     if guild_id and user_id:
@@ -198,7 +198,7 @@ async def get_user():
     
 
 @app.route('/guilds/<int:guild_id>/members/<int:user_id>', methods=['GET'])
-async def get_user(guild_id, user_id):
+def get_user(guild_id, user_id):
     response = requests.get(f'{API_URL}/guilds/{guild_id}/members/{user_id}', headers=headers, params={'limit': 1})
     member  = response.json()
     if member:
