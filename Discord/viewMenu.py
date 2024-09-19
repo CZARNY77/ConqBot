@@ -8,7 +8,7 @@ class ViewMenu(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=None)
         self.bot = bot
-        with open('Discord/Keys/config.json', 'r') as file:
+        with open('/home/container/Discord/Keys/config.json', 'r') as file:
             self.url = json.load(file)["kop_singup"]
 
         @bot.tree.command(name="menu")
@@ -93,14 +93,14 @@ class ViewMenu(discord.ui.View):
                 self.bot.db.conf_field = self.bot.db.conf_field_pl
                 await self.bot.db.bot_configuration(interaction.user, interaction.guild_id)
                 self.bot.wait_msg = True
-                self.bot.editing_user[interaction.user.display_name] = interaction.user
+                self.bot.editing_user[interaction.user.id] = interaction.user
                 await interaction.response.defer()
                 await self.bot.wait_for("message", timeout=60, check=lambda m: m.author == interaction.user)
             except asyncio.TimeoutError:
                 await interaction.user.send("Przekroczono czasowy limit!")
                 self.bot.wait_msg = False
-                self.bot.db.del_editing_user(self.bot.editing_user[interaction.user.display_name])
-                del self.bot.editing_user[interaction.user.display_name]
+                self.bot.db.del_editing_user(self.bot.editing_user[interaction.user.id])
+                del self.bot.editing_user[interaction.user.id]
         else:
             await interaction.response.send_message(content=f"Nie masz uprawnień!", ephemeral=True)
             
@@ -133,7 +133,7 @@ class ViewMenu(discord.ui.View):
     async def singup(self, interaction):
         try:
             await interaction.response.send_message(content=f"Wysyłanie...", ephemeral=True)
-            await self.bot.presenceTW.get_list()
+            await self.bot.presenceTW.get_list(interaction.guild)
             response = await interaction.original_response()
             await response.edit(content="Wysyłanie zakończone.")
         except Exception as e:

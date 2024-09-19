@@ -1,15 +1,13 @@
 import discord
 import datetime
 import pytz
-import io
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime
 from discord.ext import tasks, commands
 from Discord.presencePing import Pings
 from Discord.presenceTW import Presence
 from Discord.list import Lists
-from Discord.others import Binds, Others
-from Discord.Models import MyView
+from Discord.others import Others
 from Discord.groups import CreateGroupsBtn, EditGroupBtn
 from Discord.viewMenu import ViewMenu, ViewMenu2
 from Discord.viewMenuEng import ViewMenuEng
@@ -18,7 +16,7 @@ from Discord.recruitment import Recruitment
 import subprocess
 from dotenv import load_dotenv
 import os
-import json
+from aiohttp import web
 
 
 intents = discord.Intents.all()
@@ -38,13 +36,25 @@ class MyBot(commands.Bot):
         self.polish_timezone = pytz.timezone('Europe/Warsaw')
         self.wait_msg = False
         self.editing_user = {}
+        self.headers = {'discord-key': f"{os.getenv('SITE_KEY')}"}
+        self.app = web.Application()
+        self.app.router.add_get("/api/attendance/{guild_id:\d+}", self.get_attendance)
+        self.app.router.add_get("/api/server_verification", self.server_verification)
+        self.app.router.add_post("/api/set_config", self.set_config)
+
+    async def start_server(self):
+        runner = web.AppRunner(self.app)
+        await runner.setup()
+        site = web.TCPSite(runner, 'localhost', 8080)
+        await site.start()
 
     async def on_ready(self):
         try:
             self.class_initialize()
-            await self.update_data()
+            await self.others.update_data()
             await self.tree.sync()
             self.loop_always.start()
+            await self.start_server()
             print(f"Bot is Ready. {datetime.now(self.polish_timezone).strftime('%H:%M')}")
         except Exception as e:
             print(f"error {e}")
@@ -52,11 +62,9 @@ class MyBot(commands.Bot):
     async def on_message(self, message):
         await self.process_commands(message)
         await self.time_to_config(message)
-        await self.szpieg(message)
         if message.author.id != self.user.id:
-            await self.anime_ping(message)
-            #await self.binds.verification_msg(message)
-            await self.binds.call_to_screen(message)
+            await self.others.anime_ping(message)
+            await self.others.call_to_screen(message)
     
     async def on_guild_join(self, guild):
         self.db.one_server_verification(guild)
@@ -68,25 +76,26 @@ class MyBot(commands.Bot):
         await user.send(f'**Dostałeś unbana.**\nhttps://images-ext-1.discordapp.net/external/sVt4pSwpFwOuzSsYsNdn-v1mW4Vpp7gbYpgGydZdUFw/https/media.tenor.com/7QHbdGI_bZEAAAPo/genie-free-me.mp4')
 
     async def on_member_update(self, before, after):
-        # Sprawdzamy, czy użytkownik został wysłany na przerwę
-        if before.timed_out_until != after.timed_out_until and after.timed_out_until:
-            # Użytkownik został wysłany na przerwę
-            time_left = after.timed_out_until - datetime.now(timezone.utc) # obliczaniue ile ma przerwy
-            minutes_left = int(time_left.total_seconds() / 60)
-            seconds_left = int(time_left.total_seconds() % 60)
-            await after.send(f"Masz przerwe na {minutes_left} min {seconds_left} sec.\nhttps://media.discordapp.net/attachments/1105633406764732426/1243121426828099635/BANhammer.gif?ex=6650528c&is=664f010c&hm=c294de1f339a4ca0ad4e73a943e92efe8defaba361330b41c22c8387060f10f5&=")
+        await self.others.sent_on_break(before, after)
+        await self.others.role_check(before, after)
 
     async def on_member_remove(self, member):
         recru_channel_log_id = self.db.get_specific_value(member.guild.id, "recruiter_logs_id")
-        recruitment = Recruitment(bot=self, log_channel=recru_channel_log_id)
-        await recruitment.del_player_to_whitelist(member.display_name, self.comment, member)
+        recruitment = Recruitment(bot=self, log_channel=recru_channel_log_id, member_guild=member.guild)
+        await recruitment.del_player_to_whitelist(member)
         del recruitment
-    
+        await recruitment.del_player_to_whitelist(member)
+        del recruitment
+
+    async def on_voice_state_update(self, member, before, after):
+        await self.others.recruitment_secretary(member, after)
+
     @tasks.loop(seconds=60)
     async def loop_always(self):
         await self.db.keep_alive()
         await self.TW_day()
         await self.training_day()
+        await self.surveys_backup()
 
     async def surveys_backup(self):
         time = datetime.now(self.polish_timezone).strftime("%H:%M")
@@ -101,7 +110,7 @@ class MyBot(commands.Bot):
                 results = self.db.get_results(f"SELECT discord_server_id, alliance_server_id FROM Alliance_Server", ( ))
                 for result in results:
                     if result and result[0] and result[1]:
-                        await self.presenceTW.get_attendance(result[0], result[1])
+                        await self.presenceTW.get_attendance(result[0], result[1]) #do poprawy bo daje 3 punkty na jednym TW
                         if time in ["20:50"]:
                             self.db.update_players_on_website(result[0]) 
             if time == "20:30": # wysłanie listy na jakiś kanał
@@ -138,8 +147,6 @@ class MyBot(commands.Bot):
         self.db = Database(self)
         self.db.servers_verification(self.guilds)
         self.createGroupsBtn = CreateGroupsBtn(self)
-        self.recruView = MyView(self)
-        self.binds = Binds(self)
         self.others = Others(self)
         self.pings = Pings(self)
         self.list = Lists(self)
@@ -148,9 +155,7 @@ class MyBot(commands.Bot):
         self.ViewMenuEnd = ViewMenuEng(self)
         self.presenceTW = Presence(self)
         self.tree.add_command(self.list)
-        self.tree.add_command(self.binds)
         self.add_view(self.createGroupsBtn)
-        self.add_view(self.recruView)
         self.add_view(self.viewMenu)
         self.add_view(self.viewMenu2)
         self.add_view(self.ViewMenuEnd)
@@ -169,48 +174,77 @@ class MyBot(commands.Bot):
                     self.db.del_editing_user(self.editing_user[message.author.id])
                     del self.editing_user[message.author.id]
 
-    async def on_voice_state_update(self, member, before, after):
-        if after.channel and after.channel.id == self.channel_id:
-            role = discord.utils.get(member.guild.roles, id=self.role_id)
-            if role in member.roles:
-                sound_file = "sound/secretary.mp3"
-                voice_channel = self.get_channel(self.channel_id)
-                if voice_channel and isinstance(voice_channel, discord.VoiceChannel):
-                    # Sprawdzenie, czy bot jest już w kanale
-                    if not any(member.id == self.user.id for member in voice_channel.members):
-                        vc = await voice_channel.connect()
-                        print(f"Bot dołączył na kanał rekrutacyjny do: {member.display_name}")
+    #------------Endpoints----------------
 
-                        # Odtwarzanie dźwięku
-                        vc.play(discord.FFmpegPCMAudio(sound_file))
+    async def get_attendance(self, request):
+        try:
+            guild_id = int(request.match_info['guild_id'])
+            guild = self.get_guild(guild_id)
+            if guild:
+                await self.presenceTW.get_list(guild)
+                return web.json_response({"status": "complete" })
+            else:
+                return web.json_response({"status": "error: wrong server id!" })
+        except Exception as e:
+            return web.json_response({"status": f"failed: {e}"})               
+                                
+    async def server_verification(self, request):
+        #guild_id = int(request.match_info['guild_id'])
+        #member_id = int(request.match_info['member_id'])
+        guild_id = int(request.query.get('guild_id'))
+        member_id = int(request.query.get('member_id'))
+        member_role_id = int(request.query.get('member'))
+        logs_channel_id = int(request.query.get('logs'))
+        attendance_channel_id = int(request.query.get('attendance'))
+        tw_server_id = int(request.query.get('tw_server'))
+        tw_role_id = int(request.query.get('tw_member'))
 
-                        # Czekanie na zakończenie odtwarzania
-                        while vc.is_playing():
-                            await asyncio.sleep(2)
-                        
-                        # Rozłączanie bota po odtworzeniu dźwięku
-                        await vc.disconnect()
-                    
-    async def update_data(self):
-        results = self.db.get_results(f"SELECT secretary FROM Others WHERE discord_server_id = %s", (1232957904597024882, ))
-        results = results[0][0]
-        if results and type(results) == str:
-            results = json.loads(results)
-        if len(results) < 2:
-            return
-        self.channel_id = int(results[0])
-        self.role_id = int(results[1])
-                    
-    async def anime_ping(self, message):
-        if message.channel.id == 950694117711687732:
-            async for msg in message.channel.history(limit=1):
-                if msg.content == "@epizodyPL":
-                    for embed in msg.embeds:
-                        channelList = bot.get_channel(1130241398742974546)
-                        channelAnime = bot.get_channel(950694117711687732)
-                        async for msg in channelList.history(limit=100):
-                            if msg.content.lower() in str(embed.title).lower():
-                                await channelAnime.send(f"{msg.author.mention}")                            
+        guild = self.get_guild(guild_id)
+        if guild:
+            member = guild.get_member(member_id)
+            if member:
+                if member.guild_permissions.administrator:
+
+                    member_role = guild.get_role(member_role_id)
+                    if not member_role:
+                        return web.json_response({"status": "error: member role with given id not found!" })
+                    logs_channel = guild.get_channel_or_thread(logs_channel_id)
+                    if not logs_channel:
+                        return web.json_response({"status": "error: the logs channel with the specified id was not found!" })
+                    attendance_channel = guild.get_channel_or_thread(attendance_channel_id)
+                    if not attendance_channel:
+                        return web.json_response({"status": "error: no attendance channel with the specified id found!" })
+                    tw_server = self.get_guild(tw_server_id)
+                    if not tw_server:
+                        return web.json_response({"status": "error: no server found on TW!" })
+                    if tw_server:
+                        tw_role = tw_server.get_role(tw_role_id)
+                        if not tw_role:
+                            return web.json_response({"status": "error: member role TW not found!" })
+
+                    return web.json_response({"status": "ok" })
+                else:
+                    return web.json_response({"status": "error: you don't have enough permissions on the server!" })
+            else:
+                return web.json_response({"status": "error: member not found on server!" })
+        else:
+            return web.json_response({"status": "error: bad guild id!" })
+        
+    async def set_config(self, request):
+        try:
+            print(request)
+            print(await request.json())
+            return web.json_response({"status": f"jeszcze nic tu nie ma :P"}) 
+        except Exception as e:
+            return web.json_response({"status": f"failed: {e}"}) 
+
+    async def app_get_roles(self, request):
+        try:
+            print(request)
+            print(await request.json())
+            return web.json_response({"status": f"jeszcze nic tu nie ma :P"}) 
+        except Exception as e:
+            return web.json_response({"status": f"failed: {e}"}) 
 
 bot = MyBot()
 subprocess.Popen(['./start_gunicorn.sh'])

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import requests
 import re
 import time
+import os
 
 class Presence(commands.Cog):
     def __init__(self, bot):
@@ -15,12 +16,13 @@ class Presence(commands.Cog):
         self.data = {}
         with open('Discord/Keys/config.json', 'r') as file:
           self.url = json.load(file)["kop_singup"]
+        self.headers = {'discord-key': f"{os.getenv('SITE_KEY')}"}
 
     async def get_list(self, guild): #pobieranie graczy z listy obecności tych tylko zaznaczonych na tak
         self.data = {}
         presence_channels = self.get_presence_channels(guild)
         house = self.bot.db.get_specific_value(guild.id, "house_name")
-        lineups_role_id = self.bot.db.get_specific_value(guild.id, "lineup_role")
+        lineups_role_id = self.bot.db.get_specific_value(guild.id, "lineup_roles")
         if not presence_channels:
             #dodać aby wysyłało na logi że nie ma kanału nowa klasa
             print("nie ma kanału")
@@ -48,14 +50,11 @@ class Presence(commands.Cog):
                         if self.raid_helper_list(msg, guild):
                             break
         try:
-            delete_response  = requests.delete(f"{self.url}/{self.data['date']}")
-            delete_response.raise_for_status()
-
-            response  = requests.post(f"{self.url}/{self.data['date']}", json=self.data)
+            response  = requests.post(f"{self.url}", json=self.data, headers=self.headers)
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:
             log_channel = self.bot.get_channel(int(self.bot.db.get_specific_value(guild.id, "general_logs_id")))
-            await log_channel.send(content = f"Wystąpił błąd HTTP: {e} \n {response.text}")
+            await log_channel.send(content = f"Wystąpił błąd HTTP: {e}")
         except requests.exceptions.RequestException as e:
             log_channel = self.bot.get_channel(int(self.bot.db.get_specific_value(guild.id, "general_logs_id")))
             await log_channel.send(content = f"Wystąpił błąd żądania: {e}")
@@ -82,26 +81,28 @@ class Presence(commands.Cog):
         date = datetime.now().strftime("%Y-%m-%d")
         roleTW_id = int(roleTW_id[0])
         guildTW = self.bot.get_guild(guildTW_id)
-        presence_players_list = await self.get_players(guildTW, roleTW_id)
-        if presence_players_list:
-            record = self.bot.db.get_results("SELECT player_list FROM TW WHERE discord_server_id = %s AND date = %s", (guild_id, date))
-            if record:
-                existing_player_list = json.loads(record[0][0])
-                combined_player_list = list(set(existing_player_list + presence_players_list))
-                presence_players_list = list(set(presence_players_list) - set(existing_player_list))
-                self.bot.db.send_data(f"UPDATE TW SET player_list = %s WHERE discord_server_id = %s AND date = %s", (json.dumps(combined_player_list), guild_id, date))
-            else:
-                self.bot.db.send_data(f"INSERT INTO TW (discord_server_id, date, player_list) VALUES (%s, %s, %s)", (guild_id, date, json.dumps(presence_players_list)))
-            
-            for player_id in presence_players_list:
-                player = self.bot.get_guild(guild_id).get_member(int(player_id))
-                extra_role = self.bot.db.get_specific_value(guild_id, "extra_role_id")[0]
-                if extra_role:
-                    role_names = [role.name for role in player.roles if str(role.id) == extra_role]
-                points = self.points_from_TW
-                if role_names: 
-                    points = self.points_from_TW + self.points_extra
-                self.bot.db.points(points, int(player_id), "TW_points")
+        if guildTW:
+            presence_players_list = await self.get_players(guildTW, roleTW_id)
+            if presence_players_list:
+                record = self.bot.db.get_results("SELECT player_list FROM TW WHERE discord_server_id = %s AND date = %s", (guild_id, date))
+                if record:
+                    existing_player_list = json.loads(record[0][0])
+                    combined_player_list = list(set(existing_player_list + presence_players_list))
+                    presence_players_list = list(set(presence_players_list) - set(existing_player_list))
+                    self.bot.db.send_data(f"UPDATE TW SET player_list = %s WHERE discord_server_id = %s AND date = %s", (json.dumps(combined_player_list), guild_id, date))
+                else:
+                    self.bot.db.send_data(f"INSERT INTO TW (discord_server_id, date, player_list) VALUES (%s, %s, %s)", (guild_id, date, json.dumps(presence_players_list)))
+                
+                for player_id in presence_players_list:
+                    player = self.bot.get_guild(guild_id).get_member(int(player_id))
+                    extra_role = self.bot.db.get_specific_value(guild_id, "extra_role_id")[0]
+                    if extra_role:
+                        role_names = [role.name for role in player.roles if str(role.id) == extra_role]
+                    points = self.points_from_TW
+                    if role_names: 
+                        points = self.points_from_TW + self.points_extra
+                    self.bot.db.points(points, int(player_id), "TW_points")
+        #dodać że nie znalazło serwera TW
 
     async def get_players(self, guild, role_id):
         players_list = []
@@ -149,7 +150,7 @@ class Presence(commands.Cog):
         players_id = self.get_server_players(guild, int(role_id))
         with open('Discord/Keys/config.json', 'r') as file:
           survey_url = json.load(file)["kop_survey"]
-        response = requests.get(survey_url)
+        response = requests.get(survey_url, headers=self.bot.headers)
         response.raise_for_status() 
         data = response.json()
         for row in data["surveys"]: #przeszukuje całą listę
@@ -213,7 +214,7 @@ class Presence(commands.Cog):
                 if matches:
                     event_id = matches[0]
                     url = "https://raid-helper.dev/api/v2/events/" + event_id
-                    response = requests.get(url)
+                    response = requests.get(url, headers=self.bot.headers)
                     response.raise_for_status()
                     raid_helper_list = response.json()
                     players_accepted = []
@@ -248,7 +249,7 @@ class Presence(commands.Cog):
                 if matches:
                     event_id = matches[0]
                     url = "https://raid-helper.dev/api/v2/events/" + event_id
-                    response = requests.get(url)
+                    response = requests.get(url, headers=self.bot.headers)
                     response.raise_for_status()
                     raid_helper_list = response.json()
                     players_accepted = []

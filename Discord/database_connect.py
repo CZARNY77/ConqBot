@@ -4,7 +4,8 @@ import json
 import asyncio
 import requests
 import pytz
-from datetime import datetime, timezone
+from datetime import datetime
+from Discord.conqAppsRequests import conqSite
 
 class Database():
   def __init__(self, bot) -> None:
@@ -15,7 +16,7 @@ class Database():
     self.edited_field = {}
     self.editing_users = {}
     self.edited_guild = {}
-    with open('Discord/json/menu.json', 'r') as file:
+    with open('Discord/jsons/menu.json', 'r') as file:
         menu = json.load(file)
     self.conf_field = menu["conf_field"]
     self.conf_field_pl = menu["conf_field"]
@@ -140,6 +141,7 @@ class Database():
     self.editing_users[user.id] = user
     self.edited_guild[user.id] = id
 
+    self.conf_field = {int(k): v for k, v in self.conf_field.items()}
     embed = discord.Embed(color=user.color, title="Co chcesz zmienić")
     data_to_display = {}
     #pobranie wartości z tabeli Excel_links
@@ -216,21 +218,25 @@ class Database():
   def check_role_permissions(self, member, id):
     if member.guild_permissions.administrator:
       return True
-    service = self.get_results(f"SELECT officer_id FROM Roles WHERE discord_server_id = %s", (id, ))
-    for role in member.roles:
-      if role.id == service[0][0]:
-        return True
+    conq_site = conqSite()
+    data = conq_site.roles()
+    for row in data["roles"]:
+       if int(row["discordId"]) == member.id:
+          if row["role"] in ["HouseLeader", "RightHand"]:
+            return True
+          else:
+            return False
     return False
   
   def check_TW_role_permissions(self, member, id):
     if member.guild_permissions.administrator:
       return True
-    service = self.get_specific_value(id, "extra_role_id")
-    if service:
-      for role in member.roles:
-        if role.id == int(service[0]):
+    conq_site = conqSite()
+    data = conq_site.roles()
+    for row in data["roles"]:
+       if int(row["discordId"]) == member.id:
           return True
-      return False
+    return False
     
   def check_type(self, results, id, column_name): # 
     guild = self.bot.get_guild(id)
@@ -269,49 +275,14 @@ class Database():
     else:
         return results
     
-  def points(self, points, player_id, type_points):
+  def points(self, points, recruiter, type_points):
     try:
-      self.send_data(f"UPDATE Players SET {type_points} = {type_points} + %s WHERE id_player = %s", (points, player_id))
+      self.send_data(f"UPDATE Players SET {type_points} = {type_points} + %s WHERE id_player = %s", (points, recruiter.id))
     except Exception as e:
       print(f"błąd przy dodawaniu punktów, pewnie nie ma gracza error:\n{e}")
 
-  def update_players_on_website(self, guild_id):
-    try:
-      with open('Discord/Keys/config.json', 'r') as file:
-          url = json.load(file)["kop_users"]
-      guild = self.bot.get_guild(guild_id)
-      result = self.get_results("SELECT id_player, TW_points, signup_points, recruitment_points, activity_points FROM Players WHERE discord_server_id = %s", (guild_id,))
-      TW_role = self.get_specific_value(guild_id, "extra_role_id")
-      for player_id, TW_points, signup_points, recruitment_points, activity_points in result:
-        player = guild.get_member(player_id)
-        if player:
-          avatar = ""
-          if player.avatar:
-            avatar = str(player.avatar.url)
-          role_name = [role.name for role in player.roles if role.name != "@everyone" and str(role.id) in TW_role]
-          if role_name:
-            role_name = role_name[-1]
-            data ={
-              "idDiscord": str(player_id),   
-              "role": role_name,
-              "TW_points": TW_points,
-              "signup_points": signup_points,
-              "recruitment_points": recruitment_points,
-              "activity_points": activity_points,
-              "image": avatar
-            }
-            print(data)
-            #delete_response  = requests.delete(f"{url}/{data['date']}")
-            #delete_response.raise_for_status()
-
-            #response  = requests.post(url, json=data)
-            #response.raise_for_status()
-            #print("ok")
-    except Exception as e:
-      print(e)
-
   def del_with_whitelist(self, member_id):
-    with open('/Discord/Keys/config.json', 'r') as file:
+    with open('Discord/Keys/config.json', 'r') as file:
       url = json.load(file)["kop_whitelist"]
     full_url = f"{url}/{member_id}"
     print(full_url)
@@ -323,10 +294,14 @@ class Database():
     try:
       with open('Discord/Keys/config.json', 'r') as file:
         url = json.load(file)["kop_survey"]
-      response = requests.get(url)
-      response.raise_for_status() 
-      data = response.json()
-      with open('jsons/surveys_backup.json', 'w', encoding='utf-8') as json_file:
+      data = {}
+      for house in ["none", "Erebus", "KingdomOfPoland", "BlackForge"]: # do poprawy
+        temp_url = url + f"?house={house}"
+        response = requests.get(temp_url)
+        response.raise_for_status() 
+        data[house] = response.json()
+
+      with open('Discord/jsons/surveys_backup.json', 'w', encoding='utf-8') as json_file:
         json.dump(data, json_file, ensure_ascii=False, indent=4)
     except:
       print("coś poszło nie tak przy robieniu surveys backup.")

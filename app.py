@@ -1,9 +1,11 @@
 from flask import Flask, render_template_string, render_template, jsonify, request
+from flask_cors import CORS
 import json
 from dotenv import load_dotenv
 import os
 import mysql.connector
 import requests
+from aiohttp import web
 
 load_dotenv()
 TOKEN = os.getenv('BOT_TOKEN')
@@ -11,10 +13,12 @@ API_URL = 'https://discord.com/api/v10'
 GUILD_ID = '1232957904597024882'
 role_id = '1236647699831586838'
 headers = {'Authorization': f'Bot {TOKEN}'}
+BOT_KEY = f"{os.getenv('BOT_KEY')}"
 
 template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Discord/HTML/templates')
 static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Discord/HTML/static')
 app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
+CORS(app)
 mydb = None
 cursor = None
 
@@ -178,10 +182,18 @@ def connect_with_db():#łączy się z bazą danych
       print(e)
   
 
+def authorization_header(request):
+    auth_header = request.headers.get('Authorization')
+    # Jeśli nagłówka brakuje lub jego wartość jest niepoprawna, zwróć błąd 401 Unauthorized
+    if not auth_header or auth_header != BOT_KEY:
+        return jsonify({"status": "Unauthorized!"}), 401
+        #return web.Response(status=401, text="Unauthorized!")
+    return False
+
 @app.route('/info', methods=['GET'])
 def get_info():
     return jsonify({"info": "",})
-
+#---------------testy na pokaz-----------------
 @app.route('/user', methods=['GET'])
 def get_user():
     guild_id = request.args.get('guild_id', type=int)
@@ -192,16 +204,64 @@ def get_user():
         if member:
             return jsonify({"id": user_id, "name": member.name})
         else:
-            return jsonify({"error": "User not found"}), 404
+            return jsonify({"status": "User not found"}), 404
     else:
-        return jsonify({"error": "Invalid or missing guild_id or user_id parameter"}), 400
+        return jsonify({"status": "Invalid or missing guild_id or user_id parameter"}), 400
     
-
 @app.route('/guilds/<int:guild_id>/members/<int:user_id>', methods=['GET'])
-def get_user(guild_id, user_id):
+def get_user_v2(guild_id, user_id):
     response = requests.get(f'{API_URL}/guilds/{guild_id}/members/{user_id}', headers=headers, params={'limit': 1})
     member  = response.json()
     if member:
         return jsonify({"guild_id": guild_id, "user_id": user_id, "name": member.name})
     else:
-        return jsonify({"error": "User not found"}), 404
+        return jsonify({"status": "User not found"}), 404
+#----------------------------------------------------
+@app.route('/api/attendance/<int:guild_id>')
+def get_attendance(guild_id):
+    #auth_header = authorization_header(request)
+    #if auth_header != False:
+    #    return auth_header
+    response = requests.get(f'http://localhost:8080/api/attendance/{guild_id}')
+    return jsonify(response.json())
+
+@app.route('/api/server_verification', methods=['GET'])
+def server_verification():
+    guild_id = request.args.get('guild_id', type=int)
+    member_id = request.args.get('member_id', type=int)
+    member_role_id = request.args.get('member', type=int)
+    logs_channel_id = request.args.get('logs', type=int)
+    attendance_channel_id = request.args.get('attendance', type=int)
+    tw_server_id = request.args.get('tw_server', type=int)
+    tw_role_id = request.args.get('tw_member', type=int)
+
+    if not all([guild_id, member_id, member_role_id, logs_channel_id, attendance_channel_id, tw_server_id, tw_role_id]):
+        return web.json_response({"status": "error: missing required parameters"}, status=400)
+
+    if guild_id and member_id:
+        params = {
+        'guild_id': guild_id,
+        'member_id': member_id,
+        'member': member_role_id,
+        'logs': logs_channel_id,
+        'attendance': attendance_channel_id,
+        'tw_server': tw_server_id,
+        'tw_member': tw_role_id
+        }
+
+        response = requests.get(f'http://localhost:8080/api/server_verification', params=params)     
+        return jsonify(response.json())
+    else:
+        return jsonify({"status": "error: Invalid or missing guild_id or member_id parameter"}), 400
+
+@app.route('/api/roles', methods=['GET'])
+def get_roles():
+    guild_id = request.args.get('guild_id', type=int)
+    if guild_id:
+        response = requests.get(f'{API_URL}/guilds/{guild_id}/roles', headers=headers, params={'limit': 1})
+        temp = response.json()
+        #print(temp)
+        print(temp[0])
+        return jsonify(response.json())
+    else:
+        return jsonify({"status": "error: Invalid or missing guild_id parameter"}), 400
